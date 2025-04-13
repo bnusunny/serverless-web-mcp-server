@@ -70,10 +70,28 @@ export function storeDeploymentError(projectName: string, error: any): void {
  */
 export function storeDeploymentProgress(projectName: string, message: string): void {
   const progressFile = path.join(DEPLOYMENT_STATUS_DIR, `${projectName}-progress.log`);
+  const statusFile = path.join(DEPLOYMENT_STATUS_DIR, `${projectName}.json`);
   
   try {
     // Append to the progress log
     fs.appendFileSync(progressFile, `[${new Date().toISOString()}] ${message}\n`);
+    
+    // Also update the current status message in the status file
+    if (fs.existsSync(statusFile)) {
+      try {
+        const statusContent = fs.readFileSync(statusFile, 'utf8');
+        const status = JSON.parse(statusContent);
+        
+        // Only update if the status is still in_progress
+        if (status.status === 'in_progress') {
+          status.message = message;
+          status.lastUpdated = new Date().toISOString();
+          fs.writeFileSync(statusFile, JSON.stringify(status, null, 2));
+        }
+      } catch (err) {
+        console.error(`Error updating status file for ${projectName}:`, err);
+      }
+    }
   } catch (error) {
     console.error(`Failed to store deployment progress for ${projectName}:`, error);
   }

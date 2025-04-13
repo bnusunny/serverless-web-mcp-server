@@ -52,7 +52,7 @@ export async function deployApplication(params: any, statusCallback?: StatusCall
     };
   } catch (error) {
     console.error('Deployment failed:', error);
-    sendStatus(statusCallback, `Deployment failed: ${error instanceof Error ? error.message : String(error)}`);
+    sendStatus(statusCallback, `Deployment failed: ${error instanceof Error ? error.message : String(error)}`, configuration.projectName);
     throw error;
   }
 }
