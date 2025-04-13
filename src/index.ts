@@ -69,30 +69,32 @@ registerDeploymentResources(server);
 
 // Start the server with the appropriate transport
 if (transport === "http") {
+  // HTTP transport
   const app = express();
   const port = process.env.PORT || 3000;
   
   // Set up the HTTP endpoint
-  app.use("/mcp", express.json(), (req, res) => {
-    // Use any available method to handle the request
-    const handleMethod = (server as any).handle || (server as any).handleRequest;
-    
-    if (typeof handleMethod !== 'function') {
-      console.error("Error: MCP server does not have a handle or handleRequest method");
-      res.status(500).json({
-        jsonrpc: "2.0",
-        error: {
-          code: -32000,
-          message: "Internal server error: MCP server implementation error"
-        },
-        id: req.body.id || null
-      });
-      return;
-    }
-    
-    handleMethod.call(server, req.body).then((response: any) => {
+  app.use("/mcp", express.json(), async (req, res) => {
+    try {
+      // Get the handle method from the server
+      const handleMethod = (server as any).handle || (server as any).handleRequest;
+      
+      if (typeof handleMethod !== 'function') {
+        console.error("Error: MCP server does not have a handle or handleRequest method");
+        res.status(500).json({
+          jsonrpc: "2.0",
+          error: {
+            code: -32000,
+            message: "Internal server error: MCP server implementation error"
+          },
+          id: req.body.id || null
+        });
+        return;
+      }
+      
+      const response = await handleMethod.call(server, req.body);
       res.json(response);
-    }).catch((error: any) => {
+    } catch (error) {
       console.error("Error handling request:", error);
       res.status(500).json({
         jsonrpc: "2.0",
@@ -102,31 +104,49 @@ if (transport === "http") {
         },
         id: req.body.id || null
       });
-    });
+    }
+  });
+  
+  // Add a health check endpoint
+  app.get("/health", (req, res) => {
+    res.status(200).json({ status: "ok" });
   });
   
   app.listen(port, () => {
     console.log(`Serverless Web MCP Server listening on port ${port}`);
     console.log(`MCP endpoint: http://localhost:${port}/mcp`);
+    console.log(`Health check: http://localhost:${port}/health`);
+    console.log(`Server is ready to accept requests`);
   });
 } else {
-  // Use stdio transport - this is the mode that Roo Code uses
+  // Stdio transport - this is the mode that Roo Code uses
   console.log("Serverless Web MCP Server started in stdio mode");
+  console.log("Ready to receive JSON-RPC requests");
   
-  // For Roo Code compatibility, we need to listen for complete JSON objects
+  // Set up a buffer for incoming data
   let buffer = "";
+  let inProgress = false;
   
   process.stdin.setEncoding('utf8');
   
   process.stdin.on('data', (chunk) => {
+    // Add the chunk to the buffer
     buffer += chunk;
+    
+    // If we're already processing a request, don't try to parse again
+    if (inProgress) return;
     
     try {
       // Try to parse the buffer as JSON
       const request = JSON.parse(buffer);
-      buffer = ""; // Clear buffer on successful parse
       
-      // Use any available method to handle the request
+      // Clear buffer on successful parse
+      buffer = "";
+      
+      // Mark that we're processing a request
+      inProgress = true;
+      
+      // Get the handle method from the server
       const handleMethod = (server as any).handle || (server as any).handleRequest;
       
       if (typeof handleMethod !== 'function') {
@@ -139,6 +159,7 @@ if (transport === "http") {
           },
           id: request.id || null
         }) + "\n");
+        inProgress = false;
         return;
       }
       
@@ -146,6 +167,7 @@ if (transport === "http") {
       handleMethod.call(server, request)
         .then((response: any) => {
           process.stdout.write(JSON.stringify(response) + "\n");
+          inProgress = false;
         })
         .catch((error: any) => {
           console.error("Error handling request:", error);
@@ -157,16 +179,30 @@ if (transport === "http") {
             },
             id: request.id || null
           }) + "\n");
+          inProgress = false;
         });
     } catch (e) {
       // If we can't parse the buffer as JSON yet, just wait for more data
       if (!(e instanceof SyntaxError)) {
         console.error("Unexpected error:", e);
       }
+      // Don't clear the buffer or set inProgress if we couldn't parse the JSON
     }
   });
   
   process.stdin.on('end', () => {
+    console.log("Input stream ended. Exiting.");
+    process.exit(0);
+  });
+  
+  // Handle process termination
+  process.on('SIGINT', () => {
+    console.log("Received SIGINT. Exiting.");
+    process.exit(0);
+  });
+  
+  process.on('SIGTERM', () => {
+    console.log("Received SIGTERM. Exiting.");
     process.exit(0);
   });
 }
