@@ -59,6 +59,13 @@ function parseArgs() {
     if (arg === '--debug' || arg === '-d') {
       DEBUG = true;
       console.error('[DEBUG] Debug mode enabled');
+    } else if (arg === '--templates' || arg === '-t') {
+      // Get the next argument as the templates path
+      if (i + 1 < args.length) {
+        process.env.TEMPLATES_PATH = args[i + 1];
+        i++; // Skip the next argument
+        console.error(`[INFO] Using templates from: ${process.env.TEMPLATES_PATH}`);
+      }
     } else if (arg === '--help' || arg === '-h') {
       console.error(`
 Serverless Web MCP Server
@@ -67,12 +74,14 @@ Usage:
   serverless-web-mcp [options]
 
 Options:
-  --debug, -d     Enable debug logging
-  --help, -h      Show this help message
+  --debug, -d                 Enable debug logging
+  --templates, -t <path>      Specify templates directory path
+  --help, -h                  Show this help message
   
 Environment Variables:
-  MCP_TRANSPORT   Transport method (stdio or http, default: stdio)
-  PORT            HTTP server port (default: 3000)
+  MCP_TRANSPORT               Transport method (stdio or http, default: stdio)
+  PORT                        HTTP server port (default: 3000)
+  TEMPLATES_PATH              Path to templates directory
       `);
       process.exit(0);
     }

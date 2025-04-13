@@ -78,9 +78,12 @@ For backend and fullstack deployments, the server uses [AWS Lambda Web Adapter](
 ### Installation
 
 ```bash
-# Clone the repository
-git clone https://github.com/bnusunny/serverless-web-mcp-server-v2.git
-cd serverless-web-mcp-server-v2
+# Install globally from npm
+npm install -g serverless-web-mcp-server
+
+# Or clone the repository
+git clone https://github.com/bnusunny/serverless-web-mcp-server.git
+cd serverless-web-mcp-server
 
 # Install dependencies
 npm install
@@ -90,9 +93,6 @@ npm run build
 
 # Start the server (HTTP mode)
 MCP_TRANSPORT=http npm start
-
-# Or install globally to use as a local MCP server
-npm install -g .
 ```
 
 ### Configuration
@@ -138,6 +138,23 @@ MCP clients can connect to the server at:
 
 ```
 http://localhost:3000/mcp
+```
+
+### Command Line Options
+
+```
+Usage:
+  serverless-web-mcp [options]
+
+Options:
+  --debug, -d                 Enable debug logging
+  --templates, -t <path>      Specify templates directory path
+  --help, -h                  Show this help message
+  
+Environment Variables:
+  MCP_TRANSPORT               Transport method (stdio or http, default: stdio)
+  PORT                        HTTP server port (default: 3000)
+  TEMPLATES_PATH              Path to templates directory
 ```
 
 ### Example Tool Invocation
@@ -208,6 +225,27 @@ http://localhost:3000/mcp
 ```bash
 npm test
 ```
+
+## Troubleshooting
+
+### Template Not Found
+
+If you encounter a "Template not found" error when using the MCP server installed from npm, you can specify the templates directory path using one of these methods:
+
+1. Use the `--templates` command line option:
+   ```bash
+   serverless-web-mcp --templates /path/to/templates
+   ```
+
+2. Set the `TEMPLATES_PATH` environment variable:
+   ```bash
+   TEMPLATES_PATH=/path/to/templates serverless-web-mcp
+   ```
+
+3. Enable debug logging to see which paths are being checked:
+   ```bash
+   serverless-web-mcp --debug
+   ```
 
 ## License
 

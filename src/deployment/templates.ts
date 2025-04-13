@@ -1,19 +1,58 @@
 import fs from 'fs';
 import path from 'path';
+import { fileURLToPath } from 'url';
 import { loadConfig } from '../config.js';
+
+/**
+ * Find the templates directory using multiple resolution strategies
+ */
+function findTemplatesDirectory(configPath: string): string {
+  const possiblePaths = [
+    // 1. Use the configured path
+    configPath,
+    
+    // 2. Use path relative to current file
+    path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../templates'),
+    
+    // 3. Use path relative to current working directory
+    path.resolve(process.cwd(), 'templates'),
+    
+    // 4. Check if installed as a package
+    path.resolve(process.cwd(), 'node_modules/serverless-web-mcp-server/templates'),
+    
+    // 5. Check common global installation paths
+    path.resolve(process.env.HOME || '', 'node_modules/serverless-web-mcp-server/templates'),
+    path.resolve('/usr/local/lib/node_modules/serverless-web-mcp-server/templates'),
+    path.resolve('/usr/lib/node_modules/serverless-web-mcp-server/templates')
+  ];
+  
+  // Use environment variable if provided
+  if (process.env.TEMPLATES_PATH) {
+    possiblePaths.unshift(process.env.TEMPLATES_PATH);
+  }
+  
+  // Try each path until we find one that exists
+  for (const templatePath of possiblePaths) {
+    if (fs.existsSync(templatePath)) {
+      console.error(`Found templates directory at: ${templatePath}`);
+      return templatePath;
+    }
+  }
+  
+  // If we get here, we couldn't find the templates directory
+  throw new Error(`Templates directory not found. Tried: ${possiblePaths.join(', ')}`);
+}
 
 /**
  * Get information about available deployment templates
  */
 export async function getTemplateInfo(templateName?: string): Promise<any> {
   const config = loadConfig();
-  const templatesPath = path.resolve(config.templates.path);
+  const configuredPath = path.resolve(config.templates.path);
   
   try {
-    // Ensure templates directory exists
-    if (!fs.existsSync(templatesPath)) {
-      throw new Error(`Templates directory not found: ${templatesPath}`);
-    }
+    // Find templates directory using multiple resolution strategies
+    const templatesPath = findTemplatesDirectory(configuredPath);
     
     if (templateName) {
       // Get information about a specific template
@@ -36,7 +75,7 @@ function getSpecificTemplateInfo(templateName: string, templatesPath: string): a
   const templateFile = findTemplateFile(templateName, templatesPath);
   
   if (!templateFile) {
-    throw new Error(`Template not found: ${templateName}`);
+    throw new Error(`Template not found: ${templateName}.yaml or ${templateName}.yml. Searched in: ${templatesPath}`);
   }
   
   // Read template content

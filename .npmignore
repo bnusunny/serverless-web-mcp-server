@@ -1,0 +1,48 @@
+# Source files
+src/
+
+# Tests
+__tests__/
+*.test.ts
+*.spec.ts
+jest.config.js
+
+# Development configs
+tsconfig.json
+.eslintrc
+.prettierrc
+.github/
+
+# Documentation files
+docs/
+examples/
+DESIGN.md
+
+# Git files
+.git/
+.gitignore
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Deployment files
+deployments/
+domains/
+databases/
+.aws-sam/
+
+# Logs
+logs/
+*.log
+
+# Temporary files
+temp/
+tmp/
+*.tmp
+
+# OS specific
+.DS_Store
+Thumbs.db

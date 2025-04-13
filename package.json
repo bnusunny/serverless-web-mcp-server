@@ -1,6 +1,6 @@
 {
   "name": "serverless-web-mcp-server",
-  "version": "1.0.0",
+  "version": "0.1.2",
   "description": "A Model Context Protocol server for deploying web applications to AWS serverless infrastructure",
   "type": "module",
   "main": "build/index.js",
@@ -23,8 +23,13 @@
     "cloudfront",
     "model-context-protocol"
   ],
-  "author": "",
+  "author": "Harold Sun <sunhua@amazon.com>",
   "license": "MIT",
+  "files": [
+    "build",
+    "templates",
+    "README.md"
+  ],
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.9.0",
     "aws-sdk": "^2.1473.0",
