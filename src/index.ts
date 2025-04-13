@@ -87,12 +87,20 @@ if (transport === "http") {
   app.get("/mcp/sse", async (req, res) => {
     console.log("New SSE connection established");
     
+    // Set headers for SSE
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    
     // Create a new SSE transport
     const transport = new SSEServerTransport('/mcp/messages', res);
     const sessionId = transport.sessionId;
     
     // Store the transport
     transports[sessionId] = transport;
+    
+    // Track if connection/init was sent
+    let connectionInitSent = false;
     
     // Clean up when the connection closes
     res.on("close", () => {
@@ -104,6 +112,44 @@ if (transport === "http") {
     try {
       await server.connect(transport);
       console.log(`Server connected to transport for session ${sessionId}`);
+      
+      // Manually send a connection/init message if the SDK doesn't
+      // This ensures the client gets the session ID
+      if (process.env.DEBUG) {
+        console.log("Checking if connection/init was sent...");
+      }
+      
+      // Give the SDK a moment to send its own connection/init
+      setTimeout(() => {
+        // Check if we need to manually send a connection/init message
+        if (!connectionInitSent) {
+          console.log("Manually sending connection/init message");
+          transport.send({
+            jsonrpc: "2.0",
+            method: "connection/init",
+            params: {
+              sessionId: sessionId,
+              serverInfo: {
+                name: "serverless-web-mcp",
+                version: "0.1.3"
+              }
+            }
+          });
+          connectionInitSent = true;
+        }
+      }, 500);
+      
+      // Monkey patch the send method to track if connection/init was sent
+      const originalSend = transport.send;
+      transport.send = async (message: any) => {
+        if (message.method === "connection/init") {
+          connectionInitSent = true;
+          if (process.env.DEBUG) {
+            console.log("SDK sent connection/init message");
+          }
+        }
+        return originalSend.call(transport, message);
+      };
     } catch (error) {
       console.error("Error connecting server to transport:", error);
       res.status(500).end();
