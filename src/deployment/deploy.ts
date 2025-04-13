@@ -162,6 +162,10 @@ async function customizeTemplate(templatePath: string, configuration: any, statu
   // Read the template file
   let templateContent = fs.readFileSync(templatePath, 'utf8');
   
+  // Remove the AWS::ServerlessRepo::Application metadata section to avoid README.md reference errors
+  const sarMetadataRegex = /Metadata:\s+AWS::ServerlessRepo::Application:[\s\S]*?(?=\n\w|\Z)/;
+  templateContent = templateContent.replace(sarMetadataRegex, 'Metadata:');
+  
   // Replace placeholders with configuration values
   templateContent = templateContent.replace(/\${ProjectName}/g, configuration.projectName);
   templateContent = templateContent.replace(/\${Region}/g, configuration.region || 'us-east-1');
