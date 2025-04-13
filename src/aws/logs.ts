@@ -1,6 +1,4 @@
-/**
- * Retrieve application logs from CloudWatch
- */
+import { spawn } from 'child_process';
 
 // Type for status update callback
 type StatusCallback = (status: string) => void;
@@ -24,11 +22,22 @@ export async function getLogs(params: any, statusCallback?: StatusCallback): Pro
       throw new Error('resourceType is required');
     }
     
-    // Mock log retrieval process with status updates
-    await mockLogRetrieval(projectName, resourceType, statusCallback);
+    // Get the log group name based on resource type
+    const logGroupName = getLogGroupName(projectName, resourceType);
+    sendStatus(statusCallback, `Using log group: ${logGroupName}`);
     
-    // Return mock logs based on resource type
-    return generateMockLogs(projectName, resourceType, limit || 100);
+    // Build the AWS CLI command for retrieving logs
+    const awsCommand = buildAwsLogsCommand(logGroupName, startTime, endTime, limit);
+    
+    // Execute the AWS CLI command
+    sendStatus(statusCallback, `Executing AWS CLI command to retrieve logs...`);
+    const result = await executeAwsCommand(awsCommand, statusCallback);
+    
+    // Process and format the logs
+    sendStatus(statusCallback, `Processing log events...`);
+    const formattedLogs = formatLogs(result.stdout, resourceType);
+    
+    return formattedLogs;
   } catch (error) {
     console.error('Log retrieval failed:', error);
     sendStatus(statusCallback, `Log retrieval failed: ${error instanceof Error ? error.message : String(error)}`);
@@ -47,147 +56,145 @@ function sendStatus(callback?: StatusCallback, message?: string): void {
 }
 
 /**
- * Mock log retrieval process with status updates
+ * Get the CloudWatch Logs log group name based on resource type
  */
-async function mockLogRetrieval(
-  projectName: string,
-  resourceType: string,
-  statusCallback?: StatusCallback
-): Promise<void> {
-  sendStatus(statusCallback, `Connecting to CloudWatch Logs...`);
-  await delay(500);
-  
-  let logGroupName = '';
-  
+function getLogGroupName(projectName: string, resourceType: string): string {
   switch (resourceType) {
     case 'lambda':
-      logGroupName = `/aws/lambda/${projectName}-function`;
-      break;
+      return `/aws/lambda/${projectName}-function`;
     case 'api-gateway':
-      logGroupName = `API-Gateway-Execution-Logs/${projectName}-api/prod`;
-      break;
+      return `API-Gateway-Execution-Logs/${projectName}-api/prod`;
     case 'cloudfront':
-      logGroupName = `aws-cloudfront/distribution-id`;
-      break;
+      // CloudFront logs are typically stored in S3, but we'll use a standard format for consistency
+      return `aws-cloudfront/${projectName}-distribution`;
     default:
       throw new Error(`Unsupported resource type for logs: ${resourceType}`);
   }
-  
-  sendStatus(statusCallback, `Querying log group: ${logGroupName}...`);
-  await delay(1000);
-  
-  sendStatus(statusCallback, `Processing log events...`);
-  await delay(500);
 }
 
 /**
- * Generate mock logs based on resource type
+ * Build the AWS CLI command for retrieving logs
  */
-function generateMockLogs(projectName: string, resourceType: string, limit: number): string {
-  const logs: string[] = [];
-  const now = new Date();
+function buildAwsLogsCommand(logGroupName: string, startTime?: string, endTime?: string, limit?: number): string[] {
+  const command = ['logs', 'filter-log-events', '--log-group-name', logGroupName];
   
-  for (let i = 0; i < limit; i++) {
-    const timestamp = new Date(now.getTime() - (i * 1000));
-    const timestampStr = timestamp.toISOString();
-    
-    switch (resourceType) {
-      case 'lambda':
-        logs.push(`${timestampStr} START RequestId: ${generateRequestId()} Version: $LATEST`);
-        logs.push(`${timestampStr} ${Math.random() > 0.8 ? 'ERROR' : 'INFO'} ${generateLambdaLogMessage(projectName)}`);
-        logs.push(`${timestampStr} END RequestId: ${generateRequestId()}`);
-        logs.push(`${timestampStr} REPORT RequestId: ${generateRequestId()} Duration: ${Math.floor(Math.random() * 1000)} ms Billed Duration: ${Math.floor(Math.random() * 1000)} ms Memory Size: 512 MB Max Memory Used: ${Math.floor(Math.random() * 512)} MB`);
-        break;
-        
-      case 'api-gateway':
-        logs.push(`${timestampStr} ${generateApiGatewayLogMessage(projectName)}`);
-        break;
-        
-      case 'cloudfront':
-        logs.push(`${timestampStr} ${generateCloudfrontLogMessage()}`);
-        break;
-    }
+  // Add start time if provided
+  if (startTime) {
+    const startTimeMs = new Date(startTime).getTime();
+    command.push('--start-time', startTimeMs.toString());
   }
   
-  return logs.join('\n');
+  // Add end time if provided
+  if (endTime) {
+    const endTimeMs = new Date(endTime).getTime();
+    command.push('--end-time', endTimeMs.toString());
+  }
+  
+  // Add limit if provided
+  if (limit) {
+    command.push('--limit', limit.toString());
+  }
+  
+  // Add output format
+  command.push('--output', 'json');
+  
+  return command;
 }
 
 /**
- * Generate a random request ID
+ * Execute AWS CLI command
  */
-function generateRequestId(): string {
-  return Array.from({ length: 32 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
+async function executeAwsCommand(command: string[], statusCallback?: StatusCallback): Promise<{ stdout: string, stderr: string }> {
+  return new Promise((resolve, reject) => {
+    sendStatus(statusCallback, `Executing: aws ${command.join(' ')}`);
+    
+    const process = spawn('aws', command);
+    
+    let stdout = '';
+    let stderr = '';
+    
+    process.stdout.on('data', (data) => {
+      const chunk = data.toString();
+      stdout += chunk;
+    });
+    
+    process.stderr.on('data', (data) => {
+      const chunk = data.toString();
+      stderr += chunk;
+      sendStatus(statusCallback, `[ERROR] ${chunk.trim()}`);
+    });
+    
+    process.on('close', (code) => {
+      if (code === 0) {
+        resolve({ stdout, stderr });
+      } else {
+        reject(new Error(`AWS CLI command failed with exit code ${code}: ${stderr}`));
+      }
+    });
+    
+    process.on('error', (err) => {
+      reject(err);
+    });
+  });
 }
 
 /**
- * Generate a mock Lambda log message
+ * Format logs from AWS CLI output
  */
-function generateLambdaLogMessage(projectName: string): string {
-  const messages = [
-    `Processing request for ${projectName}`,
-    `Received event: {"path":"/api/items","httpMethod":"GET","headers":{"Accept":"*/*"}}`,
-    `Database query completed in ${Math.floor(Math.random() * 100)} ms`,
-    `Retrieved ${Math.floor(Math.random() * 100)} items from database`,
-    `Cache hit ratio: ${(Math.random() * 100).toFixed(2)}%`,
-    `Error: Connection timed out after ${Math.floor(Math.random() * 5000)} ms`,
-    `Warning: Slow database query detected (${Math.floor(Math.random() * 1000)} ms)`,
-    `Authentication successful for user id: user-${Math.floor(Math.random() * 1000)}`,
-    `Request completed with status code: ${Math.random() > 0.9 ? 500 : 200}`
-  ];
-  
-  return messages[Math.floor(Math.random() * messages.length)];
+function formatLogs(logsOutput: string, resourceType: string): string {
+  try {
+    const parsedLogs = JSON.parse(logsOutput);
+    
+    if (!parsedLogs.events || !Array.isArray(parsedLogs.events)) {
+      return 'No log events found.';
+    }
+    
+    // Format logs based on resource type
+    switch (resourceType) {
+      case 'lambda':
+        return formatLambdaLogs(parsedLogs.events);
+      case 'api-gateway':
+        return formatApiGatewayLogs(parsedLogs.events);
+      case 'cloudfront':
+        return formatCloudfrontLogs(parsedLogs.events);
+      default:
+        return parsedLogs.events.map((event: any) => {
+          const timestamp = new Date(event.timestamp).toISOString();
+          return `${timestamp} ${event.message}`;
+        }).join('\n');
+    }
+  } catch (error) {
+    console.error('Error parsing logs:', error);
+    return `Error parsing logs: ${error instanceof Error ? error.message : String(error)}`;
+  }
 }
 
 /**
- * Generate a mock API Gateway log message
+ * Format Lambda logs
  */
-function generateApiGatewayLogMessage(projectName: string): string {
-  const methods = ['GET', 'POST', 'PUT', 'DELETE'];
-  const paths = ['/api/items', '/api/users', '/api/auth', '/api/settings'];
-  const statusCodes = [200, 201, 400, 401, 403, 404, 500];
-  const ipAddresses = ['192.168.1.1', '10.0.0.1', '172.16.0.1', '8.8.8.8'];
-  
-  const method = methods[Math.floor(Math.random() * methods.length)];
-  const path = paths[Math.floor(Math.random() * paths.length)];
-  const statusCode = statusCodes[Math.floor(Math.random() * statusCodes.length)];
-  const ipAddress = ipAddresses[Math.floor(Math.random() * ipAddresses.length)];
-  const latency = Math.floor(Math.random() * 1000);
-  
-  return `${ipAddress} - - [${new Date().toISOString()}] "${method} ${path} HTTP/1.1" ${statusCode} ${Math.floor(Math.random() * 10000)} "${projectName}-api" "${latency} ms"`;
+function formatLambdaLogs(events: any[]): string {
+  return events.map((event: any) => {
+    const timestamp = new Date(event.timestamp).toISOString();
+    return `${timestamp} ${event.message.trim()}`;
+  }).join('\n');
 }
 
 /**
- * Generate a mock CloudFront log message
+ * Format API Gateway logs
  */
-function generateCloudfrontLogMessage(): string {
-  const methods = ['GET', 'HEAD'];
-  const resources = ['/index.html', '/static/js/main.js', '/static/css/main.css', '/images/logo.png', '/favicon.ico'];
-  const statusCodes = [200, 304, 403, 404];
-  const referrers = ['-', 'https://www.google.com/', 'https://www.example.com/'];
-  const userAgents = [
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.1.1 Safari/605.1.15',
-    'Mozilla/5.0 (iPhone; CPU iPhone OS 14_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.0 Mobile/15E148 Safari/604.1'
-  ];
-  
-  const date = new Date().toISOString().split('T')[0].replace(/-/g, '');
-  const time = new Date().toISOString().split('T')[1].split('.')[0].replace(/:/g, '');
-  const edgeLocation = ['IAD79-C1', 'SFO20-C2', 'LHR62-P3'][Math.floor(Math.random() * 3)];
-  const bytesSent = Math.floor(Math.random() * 100000);
-  const ipAddress = `${Math.floor(Math.random() * 256)}.${Math.floor(Math.random() * 256)}.${Math.floor(Math.random() * 256)}.${Math.floor(Math.random() * 256)}`;
-  const method = methods[Math.floor(Math.random() * methods.length)];
-  const host = 'd1234abcdef.cloudfront.net';
-  const resource = resources[Math.floor(Math.random() * resources.length)];
-  const statusCode = statusCodes[Math.floor(Math.random() * statusCodes.length)];
-  const referrer = referrers[Math.floor(Math.random() * referrers.length)];
-  const userAgent = userAgents[Math.floor(Math.random() * userAgents.length)];
-  
-  return `${date}\t${time}\t${edgeLocation}\t${bytesSent}\t${ipAddress}\t${method}\t${host}\t${resource}\t${statusCode}\t${referrer}\t${userAgent}`;
+function formatApiGatewayLogs(events: any[]): string {
+  return events.map((event: any) => {
+    const timestamp = new Date(event.timestamp).toISOString();
+    return `${timestamp} ${event.message.trim()}`;
+  }).join('\n');
 }
 
 /**
- * Helper function to simulate async operations
+ * Format CloudFront logs
  */
-function delay(ms: number): Promise<void> {
-  return new Promise(resolve => setTimeout(resolve, ms));
+function formatCloudfrontLogs(events: any[]): string {
+  return events.map((event: any) => {
+    const timestamp = new Date(event.timestamp).toISOString();
+    return `${timestamp} ${event.message.trim()}`;
+  }).join('\n');
 }

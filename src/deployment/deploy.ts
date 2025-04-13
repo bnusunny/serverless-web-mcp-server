@@ -386,7 +386,7 @@ function parseCloudFormationOutputs(outputs: Record<string, string>): any[] {
     resources.push({
       type: 'AWS::Lambda::Function',
       name: outputs.FunctionName,
-      arn: outputs.FunctionArn || `arn:aws:lambda:${outputs.Region || 'us-east-1'}:123456789012:function:${outputs.FunctionName}`
+      arn: outputs.FunctionArn
     });
   }
   

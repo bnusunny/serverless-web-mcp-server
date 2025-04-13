@@ -1,6 +1,4 @@
-/**
- * Fetch performance metrics for deployed applications
- */
+import { spawn } from 'child_process';
 
 // Type for status update callback
 type StatusCallback = (status: string) => void;
@@ -28,11 +26,29 @@ export async function getMetrics(params: any, statusCallback?: StatusCallback): 
       throw new Error('metricName is required');
     }
     
-    // Mock metrics retrieval process with status updates
-    await mockMetricsRetrieval(projectName, resourceType, metricName, statusCallback);
+    // Get the namespace and dimensions based on resource type
+    const { namespace, dimensions } = getMetricDetails(projectName, resourceType);
+    sendStatus(statusCallback, `Using namespace: ${namespace}`);
     
-    // Return mock metrics based on resource type and metric name
-    return generateMockMetrics(projectName, resourceType, metricName, period || 60);
+    // Build the AWS CLI command for retrieving metrics
+    const awsCommand = buildAwsMetricsCommand(
+      namespace,
+      metricName,
+      dimensions,
+      startTime,
+      endTime,
+      period || 60
+    );
+    
+    // Execute the AWS CLI command
+    sendStatus(statusCallback, `Executing AWS CLI command to retrieve metrics...`);
+    const result = await executeAwsCommand(awsCommand, statusCallback);
+    
+    // Process and format the metrics
+    sendStatus(statusCallback, `Processing metric data points...`);
+    const formattedMetrics = formatMetrics(result.stdout, namespace, metricName, dimensions);
+    
+    return formattedMetrics;
   } catch (error) {
     console.error('Metrics retrieval failed:', error);
     sendStatus(statusCallback, `Metrics retrieval failed: ${error instanceof Error ? error.message : String(error)}`);
@@ -51,203 +67,176 @@ function sendStatus(callback?: StatusCallback, message?: string): void {
 }
 
 /**
- * Mock metrics retrieval process with status updates
+ * Get the CloudWatch Metrics namespace and dimensions based on resource type
  */
-async function mockMetricsRetrieval(
-  projectName: string,
-  resourceType: string,
-  metricName: string,
-  statusCallback?: StatusCallback
-): Promise<void> {
-  sendStatus(statusCallback, `Connecting to CloudWatch Metrics...`);
-  await delay(500);
-  
-  let namespace = '';
-  let dimensionName = '';
-  let dimensionValue = '';
-  
+function getMetricDetails(projectName: string, resourceType: string): { namespace: string, dimensions: any[] } {
   switch (resourceType) {
     case 'lambda':
-      namespace = 'AWS/Lambda';
-      dimensionName = 'FunctionName';
-      dimensionValue = `${projectName}-function`;
-      break;
+      return {
+        namespace: 'AWS/Lambda',
+        dimensions: [
+          {
+            Name: 'FunctionName',
+            Value: `${projectName}-function`
+          }
+        ]
+      };
     case 'api-gateway':
-      namespace = 'AWS/ApiGateway';
-      dimensionName = 'ApiName';
-      dimensionValue = `${projectName}-api`;
-      break;
+      return {
+        namespace: 'AWS/ApiGateway',
+        dimensions: [
+          {
+            Name: 'ApiName',
+            Value: `${projectName}-api`
+          }
+        ]
+      };
     case 'cloudfront':
-      namespace = 'AWS/CloudFront';
-      dimensionName = 'DistributionId';
-      dimensionValue = 'E1A2B3C4D5E6F7';
-      break;
+      return {
+        namespace: 'AWS/CloudFront',
+        dimensions: [
+          {
+            Name: 'DistributionId',
+            Value: `${projectName}-distribution`
+          }
+        ]
+      };
     case 's3':
-      namespace = 'AWS/S3';
-      dimensionName = 'BucketName';
-      dimensionValue = `${projectName}-bucket`;
-      break;
+      return {
+        namespace: 'AWS/S3',
+        dimensions: [
+          {
+            Name: 'BucketName',
+            Value: `${projectName}-bucket`
+          }
+        ]
+      };
     default:
       throw new Error(`Unsupported resource type for metrics: ${resourceType}`);
   }
-  
-  sendStatus(statusCallback, `Querying metrics in namespace: ${namespace}...`);
-  await delay(500);
-  
-  sendStatus(statusCallback, `Retrieving ${metricName} for ${dimensionName}=${dimensionValue}...`);
-  await delay(1000);
-  
-  sendStatus(statusCallback, `Processing metric data points...`);
-  await delay(500);
 }
 
 /**
- * Generate mock metrics based on resource type and metric name
+ * Build the AWS CLI command for retrieving metrics
  */
-function generateMockMetrics(projectName: string, resourceType: string, metricName: string, period: number): string {
-  const now = new Date();
-  const dataPoints: any[] = [];
+function buildAwsMetricsCommand(
+  namespace: string,
+  metricName: string,
+  dimensions: any[],
+  startTime?: string,
+  endTime?: string,
+  period: number = 60
+): string[] {
+  const command = [
+    'cloudwatch',
+    'get-metric-statistics',
+    '--namespace', namespace,
+    '--metric-name', metricName,
+    '--period', period.toString(),
+    '--statistics', 'Average', 'Sum', 'Maximum', 'Minimum'
+  ];
   
-  // Generate 24 data points (covering last 24 periods)
-  for (let i = 0; i < 24; i++) {
-    const timestamp = new Date(now.getTime() - (i * period * 1000));
+  // Add dimensions
+  if (dimensions && dimensions.length > 0) {
+    const dimensionsJson = JSON.stringify(dimensions);
+    command.push('--dimensions', dimensionsJson);
+  }
+  
+  // Add start time if provided, otherwise use 24 hours ago
+  if (startTime) {
+    command.push('--start-time', startTime);
+  } else {
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    command.push('--start-time', yesterday.toISOString());
+  }
+  
+  // Add end time if provided, otherwise use current time
+  if (endTime) {
+    command.push('--end-time', endTime);
+  } else {
+    command.push('--end-time', new Date().toISOString());
+  }
+  
+  // Add output format
+  command.push('--output', 'json');
+  
+  return command;
+}
+
+/**
+ * Execute AWS CLI command
+ */
+async function executeAwsCommand(command: string[], statusCallback?: StatusCallback): Promise<{ stdout: string, stderr: string }> {
+  return new Promise((resolve, reject) => {
+    sendStatus(statusCallback, `Executing: aws ${command.join(' ')}`);
     
-    let value = 0;
+    const process = spawn('aws', command);
     
-    // Generate appropriate mock values based on resource type and metric name
-    switch (resourceType) {
-      case 'lambda':
-        if (metricName === 'Invocations') {
-          value = Math.floor(Math.random() * 100);
-        } else if (metricName === 'Duration') {
-          value = Math.floor(Math.random() * 1000);
-        } else if (metricName === 'Errors') {
-          value = Math.floor(Math.random() * 5);
-        } else if (metricName === 'Throttles') {
-          value = Math.floor(Math.random() * 2);
-        } else if (metricName === 'ConcurrentExecutions') {
-          value = Math.floor(Math.random() * 10);
-        }
-        break;
-        
-      case 'api-gateway':
-        if (metricName === 'Count') {
-          value = Math.floor(Math.random() * 200);
-        } else if (metricName === 'Latency') {
-          value = Math.floor(Math.random() * 500);
-        } else if (metricName === '4XXError') {
-          value = Math.floor(Math.random() * 10);
-        } else if (metricName === '5XXError') {
-          value = Math.floor(Math.random() * 5);
-        }
-        break;
-        
-      case 'cloudfront':
-        if (metricName === 'Requests') {
-          value = Math.floor(Math.random() * 1000);
-        } else if (metricName === 'BytesDownloaded') {
-          value = Math.floor(Math.random() * 1000000);
-        } else if (metricName === 'BytesUploaded') {
-          value = Math.floor(Math.random() * 100000);
-        } else if (metricName === '4xxErrorRate') {
-          value = Math.random() * 0.05;
-        } else if (metricName === '5xxErrorRate') {
-          value = Math.random() * 0.02;
-        }
-        break;
-        
-      case 's3':
-        if (metricName === 'BucketSizeBytes') {
-          value = Math.floor(Math.random() * 10000000);
-        } else if (metricName === 'NumberOfObjects') {
-          value = Math.floor(Math.random() * 1000);
-        } else if (metricName === 'AllRequests') {
-          value = Math.floor(Math.random() * 500);
-        } else if (metricName === 'GetRequests') {
-          value = Math.floor(Math.random() * 400);
-        } else if (metricName === 'PutRequests') {
-          value = Math.floor(Math.random() * 100);
-        }
-        break;
+    let stdout = '';
+    let stderr = '';
+    
+    process.stdout.on('data', (data) => {
+      const chunk = data.toString();
+      stdout += chunk;
+    });
+    
+    process.stderr.on('data', (data) => {
+      const chunk = data.toString();
+      stderr += chunk;
+      sendStatus(statusCallback, `[ERROR] ${chunk.trim()}`);
+    });
+    
+    process.on('close', (code) => {
+      if (code === 0) {
+        resolve({ stdout, stderr });
+      } else {
+        reject(new Error(`AWS CLI command failed with exit code ${code}: ${stderr}`));
+      }
+    });
+    
+    process.on('error', (err) => {
+      reject(err);
+    });
+  });
+}
+
+/**
+ * Format metrics from AWS CLI output
+ */
+function formatMetrics(metricsOutput: string, namespace: string, metricName: string, dimensions: any[]): string {
+  try {
+    const parsedMetrics = JSON.parse(metricsOutput);
+    
+    if (!parsedMetrics.Datapoints || !Array.isArray(parsedMetrics.Datapoints) || parsedMetrics.Datapoints.length === 0) {
+      return 'No metric data points found.';
     }
     
-    dataPoints.push({
-      Timestamp: timestamp.toISOString(),
-      Value: value,
-      Unit: getMetricUnit(metricName)
+    // Sort datapoints by timestamp
+    parsedMetrics.Datapoints.sort((a: any, b: any) => {
+      return new Date(a.Timestamp).getTime() - new Date(b.Timestamp).getTime();
     });
+    
+    // Format the metrics as a JSON string
+    const formattedMetrics = {
+      Namespace: namespace,
+      MetricName: metricName,
+      Dimensions: dimensions,
+      DataPoints: parsedMetrics.Datapoints.map((datapoint: any) => {
+        return {
+          Timestamp: datapoint.Timestamp,
+          Average: datapoint.Average,
+          Sum: datapoint.Sum,
+          Maximum: datapoint.Maximum,
+          Minimum: datapoint.Minimum,
+          Unit: datapoint.Unit
+        };
+      })
+    };
+    
+    return JSON.stringify(formattedMetrics, null, 2);
+  } catch (error) {
+    console.error('Error parsing metrics:', error);
+    return `Error parsing metrics: ${error instanceof Error ? error.message : String(error)}`;
   }
-  
-  // Format the metrics as a JSON string
-  const metrics = {
-    Namespace: `AWS/${resourceType === 'api-gateway' ? 'ApiGateway' : resourceType === 's3' ? 'S3' : resourceType.charAt(0).toUpperCase() + resourceType.slice(1)}`,
-    MetricName: metricName,
-    Dimensions: [
-      {
-        Name: getDimensionName(resourceType),
-        Value: getDimensionValue(resourceType, projectName)
-      }
-    ],
-    DataPoints: dataPoints
-  };
-  
-  return JSON.stringify(metrics, null, 2);
-}
-
-/**
- * Get the appropriate dimension name for a resource type
- */
-function getDimensionName(resourceType: string): string {
-  switch (resourceType) {
-    case 'lambda':
-      return 'FunctionName';
-    case 'api-gateway':
-      return 'ApiName';
-    case 'cloudfront':
-      return 'DistributionId';
-    case 's3':
-      return 'BucketName';
-    default:
-      return 'ResourceName';
-  }
-}
-
-/**
- * Get the appropriate dimension value for a resource type and project
- */
-function getDimensionValue(resourceType: string, projectName: string): string {
-  switch (resourceType) {
-    case 'lambda':
-      return `${projectName}-function`;
-    case 'api-gateway':
-      return `${projectName}-api`;
-    case 'cloudfront':
-      return 'E1A2B3C4D5E6F7';
-    case 's3':
-      return `${projectName}-bucket`;
-    default:
-      return projectName;
-  }
-}
-
-/**
- * Get the appropriate unit for a metric
- */
-function getMetricUnit(metricName: string): string {
-  if (metricName.includes('Latency') || metricName === 'Duration') {
-    return 'Milliseconds';
-  } else if (metricName.includes('Bytes')) {
-    return 'Bytes';
-  } else if (metricName.includes('Rate')) {
-    return 'Percent';
-  } else {
-    return 'Count';
-  }
-}
-
-/**
- * Helper function to simulate async operations
- */
-function delay(ms: number): Promise<void> {
-  return new Promise(resolve => setTimeout(resolve, ms));
 }
