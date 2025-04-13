@@ -1,6 +1,8 @@
 import fs from 'fs';
 import path from 'path';
 import yaml from 'js-yaml';
+// Import the CloudFormation schema from yaml-cfn
+import { schema } from 'yaml-cfn';
 
 // Define the directory where templates are stored
 const TEMPLATES_DIR = process.env.TEMPLATES_PATH || path.join(process.cwd(), 'templates');
@@ -20,8 +22,8 @@ export async function getTemplateInfo(templateName: string): Promise<any> {
     // Read the template file
     const templateContent = fs.readFileSync(templatePath, 'utf8');
     
-    // Parse the YAML content
-    const template = yaml.load(templateContent) as any;
+    // Parse the YAML content using the CloudFormation schema
+    const template = yaml.load(templateContent, { schema }) as any;
     
     // Return template information
     return {
