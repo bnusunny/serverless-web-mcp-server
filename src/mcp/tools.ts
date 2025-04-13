@@ -71,8 +71,13 @@ export function registerDeploymentTools(server: McpServer) {
     },
     async (params) => {
       try {
-        const result = await deployApplication(params);
+        // Deploy the application with status updates
+        const result = await deployApplication(params, (status) => {
+          // In a real implementation with streaming support, we would stream status updates here
+          console.log(status);
+        });
         
+        // Final success message with complete result
         return {
           content: [
             {
@@ -113,7 +118,10 @@ export function registerDeploymentTools(server: McpServer) {
     },
     async (params) => {
       try {
-        const result = await configureDomain(params);
+        const result = await configureDomain(params, (status) => {
+          // In a real implementation with streaming support, we would stream status updates here
+          console.log(status);
+        });
         
         return {
           content: [
@@ -169,7 +177,10 @@ export function registerDeploymentTools(server: McpServer) {
     },
     async (params) => {
       try {
-        const result = await provisionDatabase(params);
+        const result = await provisionDatabase(params, (status) => {
+          // In a real implementation with streaming support, we would stream status updates here
+          console.log(status);
+        });
         
         return {
           content: [
@@ -214,7 +225,10 @@ export function registerDeploymentTools(server: McpServer) {
     },
     async (params) => {
       try {
-        const logs = await getLogs(params);
+        const logs = await getLogs(params, (status) => {
+          // In a real implementation with streaming support, we would stream status updates here
+          console.log(status);
+        });
         
         return {
           content: [
@@ -262,7 +276,10 @@ export function registerDeploymentTools(server: McpServer) {
     },
     async (params) => {
       try {
-        const metrics = await getMetrics(params);
+        const metrics = await getMetrics(params, (status) => {
+          // In a real implementation with streaming support, we would stream status updates here
+          console.log(status);
+        });
         
         return {
           content: [
