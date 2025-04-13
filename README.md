@@ -21,6 +21,7 @@ Provides contextual information about:
 - Available deployment templates (`template:list`, `template:{name}`)
 - Existing deployments and their status (`deployment:{project-name}`)
 - AWS resource configurations (`resources:{project-name}`, `resources:list`)
+- Resource discovery (`mcp:resources`) - Lists all available resources
 
 ### Tools
 
@@ -157,6 +158,23 @@ Environment Variables:
   TEMPLATES_PATH              Path to templates directory
 ```
 
+### Resource Discovery
+
+To discover all available resources, use the `mcp:resources` resource:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "resource/get",
+  "params": {
+    "uri": "mcp:resources"
+  }
+}
+```
+
+This will return a list of all available resources, their descriptions, patterns, and examples.
+
 ### Example Tool Invocation
 
 ```json
@@ -208,7 +226,8 @@ Environment Variables:
 ├── src/
 │   ├── mcp/              # MCP protocol implementation
 │   │   ├── tools.ts      # Tool implementations
-│   │   └── resources.ts  # Resource implementations
+│   │   ├── resources.ts  # Resource implementations
+│   │   └── error-handler.ts # Error handling with suggestions
 │   ├── deployment/       # Deployment service
 │   ├── aws/              # AWS integration
 │   └── index.ts          # Main server entry point
@@ -246,6 +265,16 @@ If you encounter a "Template not found" error when using the MCP server installe
    ```bash
    serverless-web-mcp --debug
    ```
+
+### Resource Not Found
+
+If you encounter a "Resource not found" error, the server will suggest alternative resources that might be what you're looking for. You can also use the `mcp:resources` resource to discover all available resources:
+
+```bash
+curl -X POST http://localhost:3000/mcp -H "Content-Type: application/json" -d '{"jsonrpc":"2.0","id":1,"method":"resource/get","params":{"uri":"mcp:resources"}}'
+```
+
+Or when using as a local MCP server with Claude or other LLM clients, simply request the `mcp:resources` resource.
 
 ## License
 
