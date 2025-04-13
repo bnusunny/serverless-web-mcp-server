@@ -1,59 +1,68 @@
-# Metadata: Framework: Any
-# Metadata: Type: Static
-# Metadata: Description: Template for static website with S3 and CloudFront
-
 AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
-Description: Static website with S3 and CloudFront
+Description: Static website deployed with S3 and CloudFront
+
+Metadata:
+  AWS::ServerlessRepo::Application:
+    Name: static-website
+    Description: Static website deployed with S3 and CloudFront
+    Author: Serverless Web MCP Server
+    SpdxLicenseId: MIT
+    LicenseUrl: LICENSE
+    ReadmeUrl: README.md
 
 Parameters:
   ProjectName:
     Type: String
-    Default: ${PROJECT_NAME}
     Description: Name of the project
+    Default: static-website
   
   IndexDocument:
     Type: String
-    Default: ${INDEX_DOCUMENT}
-    Description: Index document for S3 website
+    Description: Index document for the website
+    Default: index.html
   
   ErrorDocument:
     Type: String
-    Default: ${ERROR_DOCUMENT}
-    Description: Error document for S3 website
+    Description: Error document for the website
+    Default: index.html
 
 Resources:
-  # S3 bucket for website hosting
   WebsiteBucket:
     Type: AWS::S3::Bucket
     Properties:
-      BucketName: !Sub ${ProjectName}-website-${AWS::AccountId}
+      BucketName: !Sub ${ProjectName}-bucket
+      AccessControl: Private
       WebsiteConfiguration:
         IndexDocument: !Ref IndexDocument
         ErrorDocument: !Ref ErrorDocument
-      PublicAccessBlockConfiguration:
-        BlockPublicAcls: true
-        BlockPublicPolicy: true
-        IgnorePublicAcls: true
-        RestrictPublicBuckets: true
-
-  # Bucket policy to allow CloudFront access
+      CorsConfiguration:
+        CorsRules:
+          - AllowedHeaders:
+              - '*'
+            AllowedMethods:
+              - GET
+              - HEAD
+            AllowedOrigins:
+              - '*'
+            MaxAge: 3000
+  
   WebsiteBucketPolicy:
     Type: AWS::S3::BucketPolicy
     Properties:
       Bucket: !Ref WebsiteBucket
       PolicyDocument:
         Statement:
-          - Effect: Allow
+          - Action:
+              - s3:GetObject
+            Effect: Allow
+            Resource: !Sub arn:aws:s3:::${WebsiteBucket}/*
             Principal:
               Service: cloudfront.amazonaws.com
-            Action: s3:GetObject
-            Resource: !Sub ${WebsiteBucket.Arn}/*
             Condition:
               StringEquals:
                 AWS:SourceArn: !Sub arn:aws:cloudfront::${AWS::AccountId}:distribution/${CloudFrontDistribution}
-
-  # CloudFront Origin Access Control
+  
   CloudFrontOriginAccessControl:
     Type: AWS::CloudFront::OriginAccessControl
     Properties:
@@ -62,8 +71,7 @@ Resources:
         OriginAccessControlOriginType: s3
         SigningBehavior: always
         SigningProtocol: sigv4
-
-  # CloudFront distribution
+  
   CloudFrontDistribution:
     Type: AWS::CloudFront::Distribution
     Properties:
@@ -71,7 +79,7 @@ Resources:
         Origins:
           - DomainName: !GetAtt WebsiteBucket.RegionalDomainName
             Id: S3Origin
-            OriginAccessControlId: !Ref CloudFrontOriginAccessControl
+            OriginAccessControlId: !GetAtt CloudFrontOriginAccessControl.Id
             S3OriginConfig:
               OriginAccessIdentity: ''
         Enabled: true
@@ -82,10 +90,14 @@ Resources:
             - HEAD
             - OPTIONS
           TargetOriginId: S3Origin
-          CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6  # Managed-CachingOptimized
-          OriginRequestPolicyId: 88a5eaf4-2fd4-4709-b370-b4c650ea3fcf  # Managed-CORS-S3Origin
+          ForwardedValues:
+            QueryString: false
+            Cookies:
+              Forward: none
           ViewerProtocolPolicy: redirect-to-https
         PriceClass: PriceClass_100
+        ViewerCertificate:
+          CloudFrontDefaultCertificate: true
         CustomErrorResponses:
           - ErrorCode: 404
             ResponseCode: 200
@@ -95,14 +107,18 @@ Resources:
             ResponsePagePath: !Sub /${IndexDocument}
 
 Outputs:
-  WebsiteBucket:
-    Description: S3 bucket for website hosting
+  BucketName:
+    Description: S3 bucket name
     Value: !Ref WebsiteBucket
   
-  CloudFrontDistribution:
+  BucketUrl:
+    Description: S3 website URL
+    Value: !GetAtt WebsiteBucket.WebsiteURL
+  
+  CloudFrontDistributionId:
     Description: CloudFront distribution ID
     Value: !Ref CloudFrontDistribution
   
-  WebsiteUrl:
-    Description: CloudFront website URL
-    Value: !Sub https://${CloudFrontDistribution.DomainName}
+  CloudFrontDomainName:
+    Description: CloudFront domain name
+    Value: !GetAtt CloudFrontDistribution.DomainName

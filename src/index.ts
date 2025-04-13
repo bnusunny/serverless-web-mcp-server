@@ -110,10 +110,21 @@ if (transport === "http") {
     console.log(`MCP endpoint: http://localhost:${port}/mcp`);
   });
 } else {
-  // Use stdio transport
-  process.stdin.on("data", async (chunk) => {
+  // Use stdio transport - this is the mode that Roo Code uses
+  console.log("Serverless Web MCP Server started in stdio mode");
+  
+  // For Roo Code compatibility, we need to listen for complete JSON objects
+  let buffer = "";
+  
+  process.stdin.setEncoding('utf8');
+  
+  process.stdin.on('data', (chunk) => {
+    buffer += chunk;
+    
     try {
-      const request = JSON.parse(chunk.toString());
+      // Try to parse the buffer as JSON
+      const request = JSON.parse(buffer);
+      buffer = ""; // Clear buffer on successful parse
       
       // Use any available method to handle the request
       const handleMethod = (server as any).handle || (server as any).handleRequest;
@@ -131,22 +142,31 @@ if (transport === "http") {
         return;
       }
       
-      const response = await handleMethod.call(server, request);
-      process.stdout.write(JSON.stringify(response) + "\n");
-    } catch (error) {
-      console.error("Error handling request:", error);
-      process.stdout.write(JSON.stringify({
-        jsonrpc: "2.0",
-        error: {
-          code: -32000,
-          message: "Internal server error"
-        },
-        id: null
-      }) + "\n");
+      // Process the request
+      handleMethod.call(server, request)
+        .then((response: any) => {
+          process.stdout.write(JSON.stringify(response) + "\n");
+        })
+        .catch((error: any) => {
+          console.error("Error handling request:", error);
+          process.stdout.write(JSON.stringify({
+            jsonrpc: "2.0",
+            error: {
+              code: -32000,
+              message: "Internal server error"
+            },
+            id: request.id || null
+          }) + "\n");
+        });
+    } catch (e) {
+      // If we can't parse the buffer as JSON yet, just wait for more data
+      if (!(e instanceof SyntaxError)) {
+        console.error("Unexpected error:", e);
+      }
     }
   });
   
-  process.stdin.on("end", () => {
+  process.stdin.on('end', () => {
     process.exit(0);
   });
 }

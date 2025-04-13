@@ -72,31 +72,32 @@ export function registerDeploymentTools(server: McpServer) {
     },
     async (params) => {
       try {
-        // Start with an immediate response to prevent timeout
-        const initialResponse = {
+        // For Roo Code compatibility, return immediately with a success message
+        // and continue the deployment in the background
+        console.log(`Starting deployment of ${params.deploymentType} application: ${params.configuration.projectName}...`);
+        
+        // Start the deployment process in the background
+        setTimeout(() => {
+          deployApplication(params, (status) => {
+            console.log(status);
+          }).then(result => {
+            console.log(`Deployment completed successfully: ${JSON.stringify(result, null, 2)}`);
+            storeDeploymentResult(params.configuration.projectName, result);
+          }).catch(error => {
+            console.error(`Deployment failed: ${error instanceof Error ? error.message : String(error)}`);
+            storeDeploymentError(params.configuration.projectName, error);
+          });
+        }, 100);
+        
+        // Return immediate response to prevent timeout
+        return {
           content: [
             {
               type: "text" as const,
-              text: `Starting deployment of ${params.deploymentType} application: ${params.configuration.projectName}...\n\nDeployment has been initiated and will continue in the background. You can check the status using the 'deployment:${params.configuration.projectName}' resource.`
+              text: `Deployment of ${params.deploymentType} application '${params.configuration.projectName}' has been initiated.\n\nThe deployment will continue in the background. You can check the status using the 'deployment:${params.configuration.projectName}' resource.`
             }
           ]
         };
-        
-        // Start the deployment process in the background
-        deployApplication(params, (status) => {
-          console.log(status);
-        }).then(result => {
-          console.log(`Deployment completed successfully: ${JSON.stringify(result, null, 2)}`);
-          // Store the result in a persistent store or file for later retrieval
-          storeDeploymentResult(params.configuration.projectName, result);
-        }).catch(error => {
-          console.error(`Deployment failed: ${error instanceof Error ? error.message : String(error)}`);
-          // Store the error in a persistent store or file for later retrieval
-          storeDeploymentError(params.configuration.projectName, error);
-        });
-        
-        // Return the initial response immediately
-        return initialResponse;
       } catch (error) {
         return {
           content: [

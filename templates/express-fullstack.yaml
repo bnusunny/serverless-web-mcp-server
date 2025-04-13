@@ -1,109 +1,114 @@
-# Metadata: Framework: Express.js + React
-# Metadata: Type: Fullstack
-# Metadata: Description: Template for fullstack application with Express.js backend API and React frontend
-
 AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
-Description: Fullstack application with Express.js backend API and React frontend
+Description: Fullstack application with Express.js backend and React frontend
+
+Metadata:
+  AWS::ServerlessRepo::Application:
+    Name: express-fullstack
+    Description: Fullstack application with Express.js backend and React frontend
+    Author: Serverless Web MCP Server
+    SpdxLicenseId: MIT
+    LicenseUrl: LICENSE
+    ReadmeUrl: README.md
 
 Parameters:
   ProjectName:
     Type: String
-    Default: ${PROJECT_NAME}
     Description: Name of the project
+    Default: fullstack-app
   
   Runtime:
     Type: String
-    Default: ${RUNTIME}
     Description: Lambda runtime
+    Default: nodejs18.x
+    AllowedValues:
+      - nodejs16.x
+      - nodejs18.x
+      - nodejs20.x
   
   MemorySize:
     Type: Number
-    Default: ${MEMORY_SIZE}
     Description: Lambda memory size in MB
+    Default: 512
+    MinValue: 128
+    MaxValue: 10240
   
   Timeout:
     Type: Number
-    Default: ${TIMEOUT}
     Description: Lambda timeout in seconds
+    Default: 30
+    MinValue: 3
+    MaxValue: 900
   
   IndexDocument:
     Type: String
-    Default: ${INDEX_DOCUMENT}
-    Description: Index document for S3 website
+    Description: Index document for the frontend
+    Default: index.html
   
   ErrorDocument:
     Type: String
-    Default: ${ERROR_DOCUMENT}
-    Description: Error document for S3 website
+    Description: Error document for the frontend
+    Default: index.html
 
 Resources:
-  # Lambda function for Express.js API
+  # Backend resources
   ApiFunction:
     Type: AWS::Serverless::Function
     Properties:
-      FunctionName: !Sub ${ProjectName}-function
-      CodeUri: ./backend
-      Handler: index.handler
+      FunctionName: !Sub ${ProjectName}-backend-function
+      CodeUri: ./src/backend
+      Handler: app.handler
       Runtime: !Ref Runtime
       MemorySize: !Ref MemorySize
       Timeout: !Ref Timeout
       Environment:
         Variables:
           NODE_ENV: production
-${ENVIRONMENT_VARIABLES}
       Events:
         ApiEvent:
           Type: Api
           Properties:
-            Path: /{proxy+}
+            Path: /api/{proxy+}
             Method: ANY
-      Layers:
-        - !Sub arn:aws:lambda:${AWS::Region}:753240598075:layer:LambdaAdapterLayerX86:1
-
-  # API Gateway
-  Api:
-    Type: AWS::Serverless::Api
-    Properties:
-      Name: !Ref ProjectName
-      StageName: prod
-      EndpointConfiguration: REGIONAL
-      Cors:
-        AllowMethods: "'*'"
-        AllowHeaders: "'*'"
-        AllowOrigin: "'*'"
-
-  # S3 bucket for website hosting
+      Policies:
+        - AWSLambdaBasicExecutionRole
+  
+  # Frontend resources
   WebsiteBucket:
     Type: AWS::S3::Bucket
     Properties:
-      BucketName: !Sub ${ProjectName}-website-${AWS::AccountId}
+      BucketName: !Sub ${ProjectName}-frontend-bucket
+      AccessControl: Private
       WebsiteConfiguration:
         IndexDocument: !Ref IndexDocument
         ErrorDocument: !Ref ErrorDocument
-      PublicAccessBlockConfiguration:
-        BlockPublicAcls: true
-        BlockPublicPolicy: true
-        IgnorePublicAcls: true
-        RestrictPublicBuckets: true
-
-  # Bucket policy to allow CloudFront access
+      CorsConfiguration:
+        CorsRules:
+          - AllowedHeaders:
+              - '*'
+            AllowedMethods:
+              - GET
+              - HEAD
+            AllowedOrigins:
+              - '*'
+            MaxAge: 3000
+  
   WebsiteBucketPolicy:
     Type: AWS::S3::BucketPolicy
     Properties:
       Bucket: !Ref WebsiteBucket
       PolicyDocument:
         Statement:
-          - Effect: Allow
+          - Action:
+              - s3:GetObject
+            Effect: Allow
+            Resource: !Sub arn:aws:s3:::${WebsiteBucket}/*
             Principal:
               Service: cloudfront.amazonaws.com
-            Action: s3:GetObject
-            Resource: !Sub ${WebsiteBucket.Arn}/*
             Condition:
               StringEquals:
                 AWS:SourceArn: !Sub arn:aws:cloudfront::${AWS::AccountId}:distribution/${CloudFrontDistribution}
-
-  # CloudFront Origin Access Control
+  
   CloudFrontOriginAccessControl:
     Type: AWS::CloudFront::OriginAccessControl
     Properties:
@@ -112,8 +117,7 @@ ${ENVIRONMENT_VARIABLES}
         OriginAccessControlOriginType: s3
         SigningBehavior: always
         SigningProtocol: sigv4
-
-  # CloudFront distribution with API Gateway origin
+  
   CloudFrontDistribution:
     Type: AWS::CloudFront::Distribution
     Properties:
@@ -121,12 +125,12 @@ ${ENVIRONMENT_VARIABLES}
         Origins:
           - DomainName: !GetAtt WebsiteBucket.RegionalDomainName
             Id: S3Origin
-            OriginAccessControlId: !Ref CloudFrontOriginAccessControl
+            OriginAccessControlId: !GetAtt CloudFrontOriginAccessControl.Id
             S3OriginConfig:
               OriginAccessIdentity: ''
-          - DomainName: !Sub ${Api}.execute-api.${AWS::Region}.amazonaws.com
+          - DomainName: !Sub ${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com
             Id: ApiOrigin
-            OriginPath: /prod
+            OriginPath: /Prod
             CustomOriginConfig:
               HTTPPort: 80
               HTTPSPort: 443
@@ -141,24 +145,33 @@ ${ENVIRONMENT_VARIABLES}
             - HEAD
             - OPTIONS
           TargetOriginId: S3Origin
-          CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6  # Managed-CachingOptimized
-          OriginRequestPolicyId: 88a5eaf4-2fd4-4709-b370-b4c650ea3fcf  # Managed-CORS-S3Origin
+          ForwardedValues:
+            QueryString: false
+            Cookies:
+              Forward: none
           ViewerProtocolPolicy: redirect-to-https
         CacheBehaviors:
           - PathPattern: /api/*
             AllowedMethods:
+              - DELETE
               - GET
               - HEAD
               - OPTIONS
-              - PUT
-              - POST
               - PATCH
-              - DELETE
+              - POST
+              - PUT
             TargetOriginId: ApiOrigin
-            CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad  # Managed-CachingDisabled
-            OriginRequestPolicyId: b689b0a8-53d0-40ab-baf2-68738e2966ac  # Managed-AllViewerExceptHostHeader
+            ForwardedValues:
+              QueryString: true
+              Headers:
+                - Authorization
+                - Content-Type
+              Cookies:
+                Forward: all
             ViewerProtocolPolicy: redirect-to-https
         PriceClass: PriceClass_100
+        ViewerCertificate:
+          CloudFrontDefaultCertificate: true
         CustomErrorResponses:
           - ErrorCode: 404
             ResponseCode: 200
@@ -170,24 +183,28 @@ ${ENVIRONMENT_VARIABLES}
 Outputs:
   ApiEndpoint:
     Description: API Gateway endpoint URL
-    Value: !Sub https://${Api}.execute-api.${AWS::Region}.amazonaws.com/prod/
+    Value: !Sub https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/api/
   
-  ApiId:
-    Description: API Gateway ID
-    Value: !Ref Api
+  FunctionName:
+    Description: Lambda function name
+    Value: !Ref ApiFunction
   
-  LambdaFunctionArn:
+  FunctionArn:
     Description: Lambda function ARN
     Value: !GetAtt ApiFunction.Arn
   
-  WebsiteBucket:
-    Description: S3 bucket for website hosting
+  BucketName:
+    Description: S3 bucket name
     Value: !Ref WebsiteBucket
   
-  CloudFrontDistribution:
+  BucketUrl:
+    Description: S3 website URL
+    Value: !GetAtt WebsiteBucket.WebsiteURL
+  
+  CloudFrontDistributionId:
     Description: CloudFront distribution ID
     Value: !Ref CloudFrontDistribution
   
-  WebsiteUrl:
-    Description: CloudFront website URL
-    Value: !Sub https://${CloudFrontDistribution.DomainName}
+  CloudFrontDomainName:
+    Description: CloudFront domain name
+    Value: !GetAtt CloudFrontDistribution.DomainName
