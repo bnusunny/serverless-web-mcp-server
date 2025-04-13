@@ -110,10 +110,7 @@ if (transport === "http") {
     
     // Connect the server to the transport
     try {
-      // Start the SSE transport
-      await transport.start();
-      
-      // Connect the server to the transport
+      // Connect the server to the transport (this will call transport.start() internally)
       await server.connect(transport);
       
       console.log(`Server connected to transport for session ${sessionId}`);
