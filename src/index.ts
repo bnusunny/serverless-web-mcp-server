@@ -151,9 +151,13 @@ if (transport === "http") {
           h1 { color: #333; }
           pre { background: #f4f4f4; padding: 10px; border-radius: 5px; overflow: auto; }
           .container { margin-top: 20px; }
-          button { padding: 8px 16px; background: #4CAF50; color: white; border: none; border-radius: 4px; cursor: pointer; }
+          button { padding: 8px 16px; background: #4CAF50; color: white; border: none; border-radius: 4px; cursor: pointer; margin-right: 10px; margin-bottom: 10px; }
           button:hover { background: #45a049; }
+          button:disabled { background: #cccccc; cursor: not-allowed; }
           #output { margin-top: 20px; border: 1px solid #ddd; padding: 10px; height: 300px; overflow: auto; }
+          .status { margin-top: 10px; font-weight: bold; }
+          .status.connected { color: green; }
+          .status.disconnected { color: red; }
         </style>
       </head>
       <body>
@@ -161,23 +165,68 @@ if (transport === "http") {
         <p>This is a Model Context Protocol (MCP) server for deploying web applications to AWS serverless infrastructure.</p>
         
         <div class="container">
+          <h2>Connection</h2>
+          <button id="connectButton">Connect to Server</button>
+          <button id="disconnectButton" disabled>Disconnect</button>
+          <div id="connectionStatus" class="status disconnected">Disconnected</div>
+          
           <h2>Test MCP Resources</h2>
-          <button id="listResources">List Resources</button>
-          <button id="getMcpResources">Get mcp:resources</button>
+          <button id="listResources" disabled>List Resources</button>
+          <button id="getMcpResources" disabled>Get mcp:resources</button>
+          <button id="getTemplateList" disabled>Get template:list</button>
+          
+          <h2>Test MCP Tools</h2>
+          <button id="listTools" disabled>List Tools</button>
+          
+          <h2>Output</h2>
           <pre id="output"></pre>
         </div>
         
         <script>
           const output = document.getElementById('output');
+          const connectButton = document.getElementById('connectButton');
+          const disconnectButton = document.getElementById('disconnectButton');
+          const connectionStatus = document.getElementById('connectionStatus');
+          const listResourcesButton = document.getElementById('listResources');
+          const getMcpResourcesButton = document.getElementById('getMcpResources');
+          const getTemplateListButton = document.getElementById('getTemplateList');
+          const listToolsButton = document.getElementById('listTools');
+          
           let sessionId = null;
           let eventSource = null;
+          let messageCounter = 1;
           
           function log(message) {
-            output.textContent += message + '\\n';
+            const timestamp = new Date().toISOString().split('T')[1].slice(0, -1);
+            output.textContent += \`[\${timestamp}] \${message}\\n\`;
             output.scrollTop = output.scrollHeight;
           }
           
+          function setConnected(connected) {
+            if (connected) {
+              connectionStatus.textContent = 'Connected';
+              connectionStatus.className = 'status connected';
+              connectButton.disabled = true;
+              disconnectButton.disabled = false;
+              listResourcesButton.disabled = false;
+              getMcpResourcesButton.disabled = false;
+              getTemplateListButton.disabled = false;
+              listToolsButton.disabled = false;
+            } else {
+              connectionStatus.textContent = 'Disconnected';
+              connectionStatus.className = 'status disconnected';
+              connectButton.disabled = false;
+              disconnectButton.disabled = true;
+              listResourcesButton.disabled = true;
+              getMcpResourcesButton.disabled = true;
+              getTemplateListButton.disabled = true;
+              listToolsButton.disabled = true;
+              sessionId = null;
+            }
+          }
+          
           function connectSSE() {
+            log('Connecting to SSE endpoint...');
             eventSource = new EventSource('/mcp/sse');
             
             eventSource.onopen = () => {
@@ -185,31 +234,45 @@ if (transport === "http") {
             };
             
             eventSource.onmessage = (event) => {
-              const data = JSON.parse(event.data);
-              log('Received: ' + JSON.stringify(data, null, 2));
-              
-              // Extract session ID from the first message
-              if (data.method === 'connection/init' && data.params && data.params.sessionId) {
-                sessionId = data.params.sessionId;
-                log('Session ID: ' + sessionId);
+              try {
+                const data = JSON.parse(event.data);
+                log('Received: ' + JSON.stringify(data, null, 2));
+                
+                // Extract session ID from the connection/init message
+                if (!sessionId && data.method === 'connection/init' && data.params && data.params.sessionId) {
+                  sessionId = data.params.sessionId;
+                  log('Session ID: ' + sessionId);
+                  setConnected(true);
+                }
+              } catch (error) {
+                log('Error parsing SSE message: ' + error.message);
               }
             };
             
             eventSource.onerror = (error) => {
-              log('SSE Error: ' + JSON.stringify(error));
-              eventSource.close();
+              log('SSE Error: Connection failed or was closed');
+              closeConnection();
             };
+          }
+          
+          function closeConnection() {
+            if (eventSource) {
+              eventSource.close();
+              eventSource = null;
+            }
+            setConnected(false);
+            log('Connection closed');
           }
           
           async function sendRequest(method, params) {
             if (!sessionId) {
-              log('No session ID available. Establish connection first.');
+              log('No session ID available. Please connect first.');
               return;
             }
             
             const request = {
               jsonrpc: '2.0',
-              id: Date.now(),
+              id: messageCounter++,
               method,
               params
             };
@@ -236,16 +299,27 @@ if (transport === "http") {
             }
           }
           
-          document.getElementById('listResources').addEventListener('click', () => {
+          connectButton.addEventListener('click', connectSSE);
+          disconnectButton.addEventListener('click', closeConnection);
+          
+          listResourcesButton.addEventListener('click', () => {
             sendRequest('resource/list', {});
           });
           
-          document.getElementById('getMcpResources').addEventListener('click', () => {
+          getMcpResourcesButton.addEventListener('click', () => {
             sendRequest('resource/get', { uri: 'mcp:resources' });
           });
           
-          // Connect when the page loads
-          connectSSE();
+          getTemplateListButton.addEventListener('click', () => {
+            sendRequest('resource/get', { uri: 'template:list' });
+          });
+          
+          listToolsButton.addEventListener('click', () => {
+            sendRequest('tool/list', {});
+          });
+          
+          // Initial state
+          setConnected(false);
         </script>
       </body>
       </html>
