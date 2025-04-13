@@ -123,72 +123,71 @@ if (transport === "http") {
   // Stdio transport - this is the mode that Roo Code uses
   console.log("Serverless Web MCP Server started in stdio mode");
   
-  // Set up a buffer for incoming data
-  let buffer = "";
+  // Create the StdioServerTransport
+  const stdioTransport = new StdioServerTransport();
   
-  process.stdin.setEncoding('utf8');
-  
-  process.stdin.on('data', (chunk) => {
-    buffer += chunk;
-    
+  // Set up message handler
+  stdioTransport.onmessage = async (message) => {
     try {
-      // Try to parse the buffer as JSON
-      const request = JSON.parse(buffer);
-      buffer = ""; // Clear buffer on successful parse
-      
-      // Use any available method to handle the request
+      // Get the handle method from the server
       const handleMethod = (server as any).handle || (server as any).handleRequest;
       
       if (typeof handleMethod !== 'function') {
         console.error("Error: MCP server does not have a handle or handleRequest method");
-        process.stdout.write(JSON.stringify({
+        await stdioTransport.send({
           jsonrpc: "2.0",
           error: {
             code: -32000,
             message: "Internal server error: MCP server implementation error"
           },
-          id: request.id || null
-        }) + "\n");
+          id: (message as any).id || null
+        });
         return;
       }
       
       // Process the request
-      handleMethod.call(server, request)
-        .then((response: any) => {
-          process.stdout.write(JSON.stringify(response) + "\n");
-        })
-        .catch((error: any) => {
-          console.error("Error handling request:", error);
-          process.stdout.write(JSON.stringify({
-            jsonrpc: "2.0",
-            error: {
-              code: -32000,
-              message: "Internal server error"
-            },
-            id: request.id || null
-          }) + "\n");
-        });
-    } catch (e) {
-      // If we can't parse the buffer as JSON yet, just wait for more data
-      if (!(e instanceof SyntaxError)) {
-        console.error("Unexpected error:", e);
-      }
+      const response = await handleMethod.call(server, message);
+      await stdioTransport.send(response);
+    } catch (error) {
+      console.error("Error handling request:", error);
+      await stdioTransport.send({
+        jsonrpc: "2.0",
+        error: {
+          code: -32000,
+          message: "Internal server error"
+        },
+        id: (message as any).id || null
+      });
     }
-  });
+  };
   
-  process.stdin.on('end', () => {
-    console.log("Input stream ended. Exiting.");
+  // Set up error handler
+  stdioTransport.onerror = (error) => {
+    console.error("Transport error:", error);
+  };
+  
+  // Set up close handler
+  stdioTransport.onclose = () => {
+    console.log("Transport closed. Exiting.");
     process.exit(0);
+  };
+  
+  // Start the transport
+  stdioTransport.start().catch(error => {
+    console.error("Failed to start transport:", error);
+    process.exit(1);
   });
   
   // Handle process termination
-  process.on('SIGINT', () => {
+  process.on('SIGINT', async () => {
     console.log("Received SIGINT. Exiting.");
+    await stdioTransport.close();
     process.exit(0);
   });
   
-  process.on('SIGTERM', () => {
+  process.on('SIGTERM', async () => {
     console.log("Received SIGTERM. Exiting.");
+    await stdioTransport.close();
     process.exit(0);
   });
 }
