@@ -163,15 +163,10 @@ if (transport === "http") {
     const stdioTransport = new StdioServerTransport();
     
     // Connect the server to the transport
+    // Note: connect() automatically starts the transport
     server.connect(stdioTransport);
     
-    // Start the transport
-    stdioTransport.start().then(() => {
-      console.log("Transport started successfully");
-    }).catch(error => {
-      console.error("Failed to start transport:", error);
-      process.exit(1);
-    });
+    console.log("Server connected to transport and ready to receive requests");
     
     // Handle process termination
     process.on('SIGINT', async () => {
