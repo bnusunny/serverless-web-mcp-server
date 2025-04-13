@@ -77,23 +77,58 @@ if (transport === "http") {
   // Set up the HTTP endpoint
   app.use("/mcp", express.json(), async (req, res) => {
     try {
-      // Get the handle method from the server
-      const handleMethod = (server as any).handle || (server as any).handleRequest;
+      // Process the request based on its method
+      const { method } = req.body;
+      let response;
       
-      if (typeof handleMethod !== 'function') {
-        console.error("Error: MCP server does not have a handle or handleRequest method");
-        res.status(500).json({
+      if (method === "resource/get") {
+        // Handle resource request
+        const { params } = req.body;
+        const uri = params?.uri;
+        
+        if (!uri) {
+          throw new Error("Missing resource URI");
+        }
+        
+        // Find the appropriate resource handler
+        const resourceHandlers = (server as any)._resourceHandlers;
+        const handler = resourceHandlers?.get(uri);
+        
+        if (!handler) {
+          throw new Error(`Resource not found: ${uri}`);
+        }
+        
+        response = {
           jsonrpc: "2.0",
-          error: {
-            code: -32000,
-            message: "Internal server error: MCP server implementation error"
-          },
-          id: req.body.id || null
-        });
-        return;
+          id: req.body.id,
+          result: await handler(params)
+        };
+      } else if (method === "tool/invoke") {
+        // Handle tool request
+        const { params } = req.body;
+        const name = params?.name;
+        
+        if (!name) {
+          throw new Error("Missing tool name");
+        }
+        
+        // Find the appropriate tool handler
+        const toolHandlers = (server as any)._toolHandlers;
+        const handler = toolHandlers?.get(name);
+        
+        if (!handler) {
+          throw new Error(`Tool not found: ${name}`);
+        }
+        
+        response = {
+          jsonrpc: "2.0",
+          id: req.body.id,
+          result: await handler(params.parameters)
+        };
+      } else {
+        throw new Error(`Unsupported method: ${method}`);
       }
       
-      const response = await handleMethod.call(server, req.body);
       res.json(response);
     } catch (error) {
       console.error("Error handling request:", error);
@@ -101,7 +136,7 @@ if (transport === "http") {
         jsonrpc: "2.0",
         error: {
           code: -32000,
-          message: "Internal server error"
+          message: error instanceof Error ? error.message : "Internal server error"
         },
         id: req.body.id || null
       });
@@ -123,71 +158,35 @@ if (transport === "http") {
   // Stdio transport - this is the mode that Roo Code uses
   console.log("Serverless Web MCP Server started in stdio mode");
   
-  // Create the StdioServerTransport
-  const stdioTransport = new StdioServerTransport();
-  
-  // Set up message handler
-  stdioTransport.onmessage = async (message) => {
-    try {
-      // Get the handle method from the server
-      const handleMethod = (server as any).handle || (server as any).handleRequest;
-      
-      if (typeof handleMethod !== 'function') {
-        console.error("Error: MCP server does not have a handle or handleRequest method");
-        await stdioTransport.send({
-          jsonrpc: "2.0",
-          error: {
-            code: -32000,
-            message: "Internal server error: MCP server implementation error"
-          },
-          id: (message as any).id || null
-        });
-        return;
-      }
-      
-      // Process the request
-      const response = await handleMethod.call(server, message);
-      await stdioTransport.send(response);
-    } catch (error) {
-      console.error("Error handling request:", error);
-      await stdioTransport.send({
-        jsonrpc: "2.0",
-        error: {
-          code: -32000,
-          message: "Internal server error"
-        },
-        id: (message as any).id || null
-      });
-    }
-  };
-  
-  // Set up error handler
-  stdioTransport.onerror = (error) => {
-    console.error("Transport error:", error);
-  };
-  
-  // Set up close handler
-  stdioTransport.onclose = () => {
-    console.log("Transport closed. Exiting.");
-    process.exit(0);
-  };
-  
-  // Start the transport
-  stdioTransport.start().catch(error => {
-    console.error("Failed to start transport:", error);
+  try {
+    // Create the StdioServerTransport
+    const stdioTransport = new StdioServerTransport();
+    
+    // Connect the server to the transport
+    server.connect(stdioTransport);
+    
+    // Start the transport
+    stdioTransport.start().then(() => {
+      console.log("Transport started successfully");
+    }).catch(error => {
+      console.error("Failed to start transport:", error);
+      process.exit(1);
+    });
+    
+    // Handle process termination
+    process.on('SIGINT', async () => {
+      console.log("Received SIGINT. Exiting.");
+      await server.close();
+      process.exit(0);
+    });
+    
+    process.on('SIGTERM', async () => {
+      console.log("Received SIGTERM. Exiting.");
+      await server.close();
+      process.exit(0);
+    });
+  } catch (error) {
+    console.error("Error setting up server:", error);
     process.exit(1);
-  });
-  
-  // Handle process termination
-  process.on('SIGINT', async () => {
-    console.log("Received SIGINT. Exiting.");
-    await stdioTransport.close();
-    process.exit(0);
-  });
-  
-  process.on('SIGTERM', async () => {
-    console.log("Received SIGTERM. Exiting.");
-    await stdioTransport.close();
-    process.exit(0);
-  });
+  }
 }
