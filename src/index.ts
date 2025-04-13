@@ -113,6 +113,9 @@ if (transport === "http") {
       // Start the SSE transport
       await transport.start();
       
+      // Connect the server to the transport
+      await server.connect(transport);
+      
       console.log(`Server connected to transport for session ${sessionId}`);
       
       // Manually send a connection/init message if the SDK doesn't
