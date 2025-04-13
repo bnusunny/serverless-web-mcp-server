@@ -2,6 +2,8 @@ import fs from 'fs';
 import path from 'path';
 import { spawn } from 'child_process';
 import { getTemplateInfo } from './templates.js';
+import { exec } from 'child_process';
+import os from 'os';
 
 // Type for status update callback
 type StatusCallback = (status: string) => void;
@@ -29,7 +31,7 @@ export async function deployApplication(params: any, statusCallback?: StatusCall
     
     // Create a temporary directory for the deployment
     sendStatus(statusCallback, `Preparing deployment files...`);
-    const deploymentDir = await prepareDeploymentDirectory(source.path, templateInfo.path, configuration);
+    const deploymentDir = await prepareDeploymentDirectory(source.path, templateInfo.path, configuration, statusCallback);
     
     // Deploy using AWS SAM CLI
     sendStatus(statusCallback, `Starting AWS SAM deployment...`);
@@ -68,81 +70,215 @@ function sendStatus(callback?: StatusCallback, message?: string): void {
 /**
  * Prepare a deployment directory with the source code and template
  */
-async function prepareDeploymentDirectory(sourcePath: string, templatePath: string, configuration: any): Promise<string> {
-  // In a real implementation, this would:
-  // 1. Create a temporary directory
-  // 2. Copy the source code to the directory
-  // 3. Copy and customize the template for the specific deployment
-  // 4. Return the path to the prepared directory
+async function prepareDeploymentDirectory(
+  sourcePath: string, 
+  templatePath: string, 
+  configuration: any,
+  statusCallback?: StatusCallback
+): Promise<string> {
+  sendStatus(statusCallback, `Creating deployment directory for ${configuration.projectName}...`);
   
-  // For now, we'll just return the source path
-  console.log(`Preparing deployment directory for ${configuration.projectName}...`);
-  console.log(`Source path: ${sourcePath}`);
-  console.log(`Template path: ${templatePath}`);
+  // Create a temporary directory
+  const tempDir = path.join(os.tmpdir(), `deploy-${configuration.projectName}-${Date.now()}`);
+  fs.mkdirSync(tempDir, { recursive: true });
   
-  // Check if the template file exists
-  if (!fs.existsSync(templatePath)) {
-    throw new Error(`Template file not found: ${templatePath}`);
+  sendStatus(statusCallback, `Created temporary directory: ${tempDir}`);
+  
+  // Copy source code to the temporary directory
+  sendStatus(statusCallback, `Copying source code from ${sourcePath}...`);
+  await copyDirectory(sourcePath, path.join(tempDir, 'src'), statusCallback);
+  
+  // Copy and customize the template
+  sendStatus(statusCallback, `Copying and customizing template from ${templatePath}...`);
+  const templateDestPath = path.join(tempDir, 'template.yaml');
+  fs.copyFileSync(templatePath, templateDestPath);
+  
+  // Customize the template based on configuration
+  await customizeTemplate(templateDestPath, configuration, statusCallback);
+  
+  sendStatus(statusCallback, `Deployment directory prepared successfully.`);
+  return tempDir;
+}
+
+/**
+ * Copy a directory recursively
+ */
+async function copyDirectory(src: string, dest: string, statusCallback?: StatusCallback): Promise<void> {
+  return new Promise((resolve, reject) => {
+    fs.mkdirSync(dest, { recursive: true });
+    
+    fs.readdir(src, { withFileTypes: true }, (err, entries) => {
+      if (err) {
+        reject(err);
+        return;
+      }
+      
+      let pending = entries.length;
+      if (pending === 0) {
+        resolve();
+        return;
+      }
+      
+      entries.forEach(entry => {
+        const srcPath = path.join(src, entry.name);
+        const destPath = path.join(dest, entry.name);
+        
+        if (entry.isDirectory()) {
+          copyDirectory(srcPath, destPath, statusCallback)
+            .then(() => {
+              if (--pending === 0) resolve();
+            })
+            .catch(reject);
+        } else {
+          fs.copyFile(srcPath, destPath, err => {
+            if (err) {
+              reject(err);
+              return;
+            }
+            
+            if (--pending === 0) resolve();
+          });
+        }
+      });
+    });
+  });
+}
+
+/**
+ * Customize the template based on configuration
+ */
+async function customizeTemplate(templatePath: string, configuration: any, statusCallback?: StatusCallback): Promise<void> {
+  sendStatus(statusCallback, `Customizing template with project configuration...`);
+  
+  // Read the template file
+  let templateContent = fs.readFileSync(templatePath, 'utf8');
+  
+  // Replace placeholders with configuration values
+  templateContent = templateContent.replace(/\${ProjectName}/g, configuration.projectName);
+  templateContent = templateContent.replace(/\${Region}/g, configuration.region || 'us-east-1');
+  
+  // Apply deployment-specific customizations
+  if (configuration.backendConfiguration) {
+    templateContent = templateContent.replace(/\${Runtime}/g, configuration.backendConfiguration.runtime || 'nodejs18.x');
+    templateContent = templateContent.replace(/\${MemorySize}/g, configuration.backendConfiguration.memorySize || '512');
+    templateContent = templateContent.replace(/\${Timeout}/g, configuration.backendConfiguration.timeout || '30');
   }
   
-  // Check if the source directory exists
-  if (!fs.existsSync(sourcePath)) {
-    throw new Error(`Source directory not found: ${sourcePath}`);
+  if (configuration.frontendConfiguration) {
+    templateContent = templateContent.replace(/\${IndexDocument}/g, configuration.frontendConfiguration.indexDocument || 'index.html');
+    templateContent = templateContent.replace(/\${ErrorDocument}/g, configuration.frontendConfiguration.errorDocument || 'index.html');
   }
   
-  return sourcePath;
+  // Write the customized template back to the file
+  fs.writeFileSync(templatePath, templateContent);
+  
+  sendStatus(statusCallback, `Template customized successfully.`);
 }
 
 /**
  * Deploy the application using AWS SAM CLI
  */
 async function deployWithSAM(deploymentDir: string, configuration: any, statusCallback?: StatusCallback): Promise<any> {
-  return new Promise((resolve, reject) => {
+  try {
     sendStatus(statusCallback, `Deploying ${configuration.projectName} with AWS SAM CLI...`);
     
-    // In a real implementation, this would spawn the AWS SAM CLI process
-    // and stream the output to the client
+    // Step 1: Build the application
+    sendStatus(statusCallback, `Building application...`);
+    const buildResult = await executeSamCommand(
+      ['build', '--use-container'],
+      deploymentDir,
+      statusCallback
+    );
     
-    // Mock deployment stages with status updates
-    setTimeout(() => {
-      sendStatus(statusCallback, `Building application...`);
-      
-      setTimeout(() => {
-        sendStatus(statusCallback, `Packaging artifacts...`);
-        
-        setTimeout(() => {
-          sendStatus(statusCallback, `Uploading to S3...`);
-          
-          setTimeout(() => {
-            sendStatus(statusCallback, `Creating CloudFormation stack...`);
-            
-            setTimeout(() => {
-              sendStatus(statusCallback, `Waiting for CloudFormation stack creation...`);
-              
-              setTimeout(() => {
-                sendStatus(statusCallback, `CloudFormation stack creation completed.`);
-                
-                // Mock CloudFormation outputs based on deployment type
-                const outputs = mockCloudFormationOutputs(configuration);
-                
-                sendStatus(statusCallback, `Deployment of ${configuration.projectName} completed successfully.`);
-                
-                resolve({
-                  success: true,
-                  outputs
-                });
-              }, 1000);
-            }, 1000);
-          }, 500);
-        }, 500);
-      }, 500);
-    }, 500); // Simulate deployment stages with delays
-  });
+    // Step 2: Deploy the application
+    sendStatus(statusCallback, `Deploying application...`);
+    const deployArgs = [
+      'deploy',
+      '--stack-name', `${configuration.projectName}-stack`,
+      '--capabilities', 'CAPABILITY_IAM',
+      '--no-confirm-changeset',
+      '--region', configuration.region || 'us-east-1'
+    ];
+    
+    // Add parameter overrides based on configuration
+    const paramOverrides = buildParameterOverrides(configuration);
+    if (paramOverrides.length > 0) {
+      deployArgs.push('--parameter-overrides', paramOverrides.join(' '));
+    }
+    
+    const deployResult = await executeSamCommand(
+      deployArgs,
+      deploymentDir,
+      statusCallback
+    );
+    
+    // Step 3: Get the CloudFormation outputs
+    sendStatus(statusCallback, `Retrieving deployment outputs...`);
+    const describeResult = await executeAwsCommand(
+      [
+        'cloudformation', 'describe-stacks',
+        '--stack-name', `${configuration.projectName}-stack`,
+        '--region', configuration.region || 'us-east-1',
+        '--query', 'Stacks[0].Outputs'
+      ],
+      statusCallback
+    );
+    
+    // Parse the outputs
+    const outputs = parseAwsOutputs(describeResult.stdout);
+    
+    sendStatus(statusCallback, `Deployment of ${configuration.projectName} completed successfully.`);
+    
+    return {
+      success: true,
+      outputs
+    };
+  } catch (error) {
+    sendStatus(statusCallback, `Deployment failed: ${error instanceof Error ? error.message : String(error)}`);
+    throw error;
+  }
+}
+
+/**
+ * Build parameter overrides for SAM deployment
+ */
+function buildParameterOverrides(configuration: any): string[] {
+  const overrides: string[] = [];
+  
+  // Add common parameters
+  overrides.push(`ProjectName=${configuration.projectName}`);
+  
+  // Add backend-specific parameters
+  if (configuration.backendConfiguration) {
+    if (configuration.backendConfiguration.runtime) {
+      overrides.push(`Runtime=${configuration.backendConfiguration.runtime}`);
+    }
+    
+    if (configuration.backendConfiguration.memorySize) {
+      overrides.push(`MemorySize=${configuration.backendConfiguration.memorySize}`);
+    }
+    
+    if (configuration.backendConfiguration.timeout) {
+      overrides.push(`Timeout=${configuration.backendConfiguration.timeout}`);
+    }
+  }
+  
+  // Add frontend-specific parameters
+  if (configuration.frontendConfiguration) {
+    if (configuration.frontendConfiguration.indexDocument) {
+      overrides.push(`IndexDocument=${configuration.frontendConfiguration.indexDocument}`);
+    }
+    
+    if (configuration.frontendConfiguration.errorDocument) {
+      overrides.push(`ErrorDocument=${configuration.frontendConfiguration.errorDocument}`);
+    }
+  }
+  
+  return overrides;
 }
 
 /**
  * Execute AWS SAM CLI command
- * This would be used in a real implementation
  */
 async function executeSamCommand(command: string[], cwd: string, statusCallback?: StatusCallback): Promise<{ stdout: string, stderr: string }> {
   return new Promise((resolve, reject) => {
@@ -180,50 +316,62 @@ async function executeSamCommand(command: string[], cwd: string, statusCallback?
 }
 
 /**
- * Mock CloudFormation outputs for different deployment types
+ * Execute AWS CLI command
  */
-function mockCloudFormationOutputs(configuration: any): Record<string, string> {
-  const projectName = configuration.projectName;
-  const region = configuration.region || 'us-east-1';
-  
-  // Determine deployment type from configuration
-  let deploymentType = 'backend';
-  if (configuration.frontendConfiguration && !configuration.backendConfiguration) {
-    deploymentType = 'frontend';
-  } else if (configuration.frontendConfiguration && configuration.backendConfiguration) {
-    deploymentType = 'fullstack';
-  }
-  
-  // Generate mock outputs based on deployment type
-  switch (deploymentType) {
-    case 'backend':
-      return {
-        'ApiEndpoint': `https://abcdef1234.execute-api.${region}.amazonaws.com/prod`,
-        'FunctionArn': `arn:aws:lambda:${region}:123456789012:function:${projectName}-function`,
-        'FunctionName': `${projectName}-function`
-      };
-      
-    case 'frontend':
-      return {
-        'BucketName': `${projectName}-bucket`,
-        'BucketUrl': `${projectName}-bucket.s3.amazonaws.com`,
-        'CloudFrontDistributionId': 'E1A2B3C4D5E6F7',
-        'CloudFrontDomainName': `d1234abcdef.cloudfront.net`
-      };
-      
-    case 'fullstack':
-      return {
-        'ApiEndpoint': `https://abcdef1234.execute-api.${region}.amazonaws.com/prod`,
-        'FunctionArn': `arn:aws:lambda:${region}:123456789012:function:${projectName}-backend-function`,
-        'FunctionName': `${projectName}-backend-function`,
-        'BucketName': `${projectName}-frontend-bucket`,
-        'BucketUrl': `${projectName}-frontend-bucket.s3.amazonaws.com`,
-        'CloudFrontDistributionId': 'E1A2B3C4D5E6F7',
-        'CloudFrontDomainName': `d1234abcdef.cloudfront.net`
-      };
-      
-    default:
-      return {};
+async function executeAwsCommand(command: string[], statusCallback?: StatusCallback): Promise<{ stdout: string, stderr: string }> {
+  return new Promise((resolve, reject) => {
+    sendStatus(statusCallback, `Executing: aws ${command.join(' ')}`);
+    
+    const process = spawn('aws', command);
+    
+    let stdout = '';
+    let stderr = '';
+    
+    process.stdout.on('data', (data) => {
+      const chunk = data.toString();
+      stdout += chunk;
+    });
+    
+    process.stderr.on('data', (data) => {
+      const chunk = data.toString();
+      stderr += chunk;
+      sendStatus(statusCallback, `[ERROR] ${chunk.trim()}`);
+    });
+    
+    process.on('close', (code) => {
+      if (code === 0) {
+        resolve({ stdout, stderr });
+      } else {
+        reject(new Error(`AWS CLI command failed with exit code ${code}: ${stderr}`));
+      }
+    });
+    
+    process.on('error', (err) => {
+      reject(err);
+    });
+  });
+}
+
+/**
+ * Parse AWS CLI JSON output
+ */
+function parseAwsOutputs(output: string): Record<string, string> {
+  try {
+    const outputs: Record<string, string> = {};
+    const parsedOutput = JSON.parse(output);
+    
+    if (Array.isArray(parsedOutput)) {
+      parsedOutput.forEach(item => {
+        if (item.OutputKey && item.OutputValue) {
+          outputs[item.OutputKey] = item.OutputValue;
+        }
+      });
+    }
+    
+    return outputs;
+  } catch (error) {
+    console.error('Error parsing AWS outputs:', error);
+    return {};
   }
 }
 
@@ -238,14 +386,14 @@ function parseCloudFormationOutputs(outputs: Record<string, string>): any[] {
     resources.push({
       type: 'AWS::Lambda::Function',
       name: outputs.FunctionName,
-      arn: outputs.FunctionArn
+      arn: outputs.FunctionArn || `arn:aws:lambda:${outputs.Region || 'us-east-1'}:123456789012:function:${outputs.FunctionName}`
     });
   }
   
   if (outputs.ApiEndpoint) {
     resources.push({
       type: 'AWS::ApiGateway::RestApi',
-      name: outputs.FunctionName ? `${outputs.FunctionName}-api` : 'api',
+      name: outputs.ApiName || (outputs.FunctionName ? `${outputs.FunctionName}-api` : 'api'),
       url: outputs.ApiEndpoint
     });
   }
@@ -254,14 +402,14 @@ function parseCloudFormationOutputs(outputs: Record<string, string>): any[] {
     resources.push({
       type: 'AWS::S3::Bucket',
       name: outputs.BucketName,
-      url: outputs.BucketUrl
+      url: outputs.BucketUrl || `${outputs.BucketName}.s3.amazonaws.com`
     });
   }
   
   if (outputs.CloudFrontDomainName) {
     resources.push({
       type: 'AWS::CloudFront::Distribution',
-      name: outputs.CloudFrontDistributionId,
+      name: outputs.CloudFrontDistributionId || 'CloudFrontDistribution',
       url: `https://${outputs.CloudFrontDomainName}`
     });
   }
