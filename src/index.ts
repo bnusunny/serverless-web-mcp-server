@@ -231,6 +231,10 @@ if (transport === "http") {
             
             eventSource.onopen = () => {
               log('SSE connection established');
+              // We need to wait for the connection/init message to get the sessionId
+              // but we can indicate that the connection is at least open
+              connectionStatus.textContent = 'Connected (waiting for session ID)';
+              connectionStatus.className = 'status connected';
             };
             
             eventSource.onmessage = (event) => {
@@ -239,7 +243,7 @@ if (transport === "http") {
                 log('Received: ' + JSON.stringify(data, null, 2));
                 
                 // Extract session ID from the connection/init message
-                if (!sessionId && data.method === 'connection/init' && data.params && data.params.sessionId) {
+                if (data.method === 'connection/init' && data.params && data.params.sessionId) {
                   sessionId = data.params.sessionId;
                   log('Session ID: ' + sessionId);
                   setConnected(true);
