@@ -5,6 +5,7 @@ import { configureDomain } from "../deployment/domain.js";
 import { provisionDatabase } from "../deployment/database.js";
 import { getLogs } from "../aws/logs.js";
 import { getMetrics } from "../aws/metrics.js";
+import { storeDeploymentResult, storeDeploymentError } from "../deployment/status.js";
 
 /**
  * Register all deployment tools with the MCP server
@@ -71,27 +72,37 @@ export function registerDeploymentTools(server: McpServer) {
     },
     async (params) => {
       try {
-        // Deploy the application with status updates
-        const result = await deployApplication(params, (status) => {
-          // In a real implementation with streaming support, we would stream status updates here
-          console.log(status);
-        });
-        
-        // Final success message with complete result
-        return {
+        // Start with an immediate response to prevent timeout
+        const initialResponse = {
           content: [
             {
-              type: "text",
-              text: `Successfully deployed ${params.deploymentType} application: ${params.configuration.projectName}\n\n${JSON.stringify(result, null, 2)}`
+              type: "text" as const,
+              text: `Starting deployment of ${params.deploymentType} application: ${params.configuration.projectName}...\n\nDeployment has been initiated and will continue in the background. You can check the status using the 'deployment:${params.configuration.projectName}' resource.`
             }
           ]
         };
+        
+        // Start the deployment process in the background
+        deployApplication(params, (status) => {
+          console.log(status);
+        }).then(result => {
+          console.log(`Deployment completed successfully: ${JSON.stringify(result, null, 2)}`);
+          // Store the result in a persistent store or file for later retrieval
+          storeDeploymentResult(params.configuration.projectName, result);
+        }).catch(error => {
+          console.error(`Deployment failed: ${error instanceof Error ? error.message : String(error)}`);
+          // Store the error in a persistent store or file for later retrieval
+          storeDeploymentError(params.configuration.projectName, error);
+        });
+        
+        // Return the initial response immediately
+        return initialResponse;
       } catch (error) {
         return {
           content: [
             {
-              type: "text",
-              text: `Deployment failed: ${error instanceof Error ? error.message : String(error)}`
+              type: "text" as const,
+              text: `Failed to initiate deployment: ${error instanceof Error ? error.message : String(error)}`
             }
           ]
         };
@@ -119,14 +130,13 @@ export function registerDeploymentTools(server: McpServer) {
     async (params) => {
       try {
         const result = await configureDomain(params, (status) => {
-          // In a real implementation with streaming support, we would stream status updates here
           console.log(status);
         });
         
         return {
           content: [
             {
-              type: "text",
+              type: "text" as const,
               text: `Successfully configured domain ${params.domainName} for project ${params.projectName}\n\n${JSON.stringify(result, null, 2)}`
             }
           ]
@@ -135,7 +145,7 @@ export function registerDeploymentTools(server: McpServer) {
         return {
           content: [
             {
-              type: "text",
+              type: "text" as const,
               text: `Domain configuration failed: ${error instanceof Error ? error.message : String(error)}`
             }
           ]
@@ -178,14 +188,13 @@ export function registerDeploymentTools(server: McpServer) {
     async (params) => {
       try {
         const result = await provisionDatabase(params, (status) => {
-          // In a real implementation with streaming support, we would stream status updates here
           console.log(status);
         });
         
         return {
           content: [
             {
-              type: "text",
+              type: "text" as const,
               text: `Successfully provisioned ${params.databaseType} for project ${params.projectName}\n\n${JSON.stringify(result, null, 2)}`
             }
           ]
@@ -194,7 +203,7 @@ export function registerDeploymentTools(server: McpServer) {
         return {
           content: [
             {
-              type: "text",
+              type: "text" as const,
               text: `Database provisioning failed: ${error instanceof Error ? error.message : String(error)}`
             }
           ]
@@ -226,14 +235,13 @@ export function registerDeploymentTools(server: McpServer) {
     async (params) => {
       try {
         const logs = await getLogs(params, (status) => {
-          // In a real implementation with streaming support, we would stream status updates here
           console.log(status);
         });
         
         return {
           content: [
             {
-              type: "text",
+              type: "text" as const,
               text: `Logs for ${params.resourceType} in project ${params.projectName}:\n\n${logs}`
             }
           ]
@@ -242,7 +250,7 @@ export function registerDeploymentTools(server: McpServer) {
         return {
           content: [
             {
-              type: "text",
+              type: "text" as const,
               text: `Failed to retrieve logs: ${error instanceof Error ? error.message : String(error)}`
             }
           ]
@@ -277,14 +285,13 @@ export function registerDeploymentTools(server: McpServer) {
     async (params) => {
       try {
         const metrics = await getMetrics(params, (status) => {
-          // In a real implementation with streaming support, we would stream status updates here
           console.log(status);
         });
         
         return {
           content: [
             {
-              type: "text",
+              type: "text" as const,
               text: `Metrics for ${params.resourceType} in project ${params.projectName}:\n\n${metrics}`
             }
           ]
@@ -293,7 +300,7 @@ export function registerDeploymentTools(server: McpServer) {
         return {
           content: [
             {
-              type: "text",
+              type: "text" as const,
               text: `Failed to retrieve metrics: ${error instanceof Error ? error.message : String(error)}`
             }
           ]

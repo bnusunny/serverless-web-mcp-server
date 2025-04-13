@@ -16,7 +16,7 @@ export async function deployApplication(params: any, statusCallback?: StatusCall
   
   try {
     // Send status update
-    sendStatus(statusCallback, `Starting deployment of ${configuration.projectName}...`);
+    sendStatus(statusCallback, `Starting deployment of ${configuration.projectName}...`, configuration.projectName);
     
     // Validate parameters
     validateDeploymentParams(params);
@@ -24,21 +24,21 @@ export async function deployApplication(params: any, statusCallback?: StatusCall
     // Get appropriate template based on deployment type and framework
     const templateName = getTemplateNameForDeployment(deploymentType, framework);
     
-    sendStatus(statusCallback, `Using template: ${templateName}`);
+    sendStatus(statusCallback, `Using template: ${templateName}`, configuration.projectName);
     
     // Get template information
     const templateInfo = await getTemplateInfo(templateName);
     
     // Create a temporary directory for the deployment
-    sendStatus(statusCallback, `Preparing deployment files...`);
+    sendStatus(statusCallback, `Preparing deployment files...`, configuration.projectName);
     const deploymentDir = await prepareDeploymentDirectory(source.path, templateInfo.path, configuration, statusCallback);
     
     // Deploy using AWS SAM CLI
-    sendStatus(statusCallback, `Starting AWS SAM deployment...`);
+    sendStatus(statusCallback, `Starting AWS SAM deployment...`, configuration.projectName);
     const deploymentResult = await deployWithSAM(deploymentDir, configuration, statusCallback);
     
     // Parse the outputs from CloudFormation to get the deployed resources
-    sendStatus(statusCallback, `Deployment completed. Processing results...`);
+    sendStatus(statusCallback, `Deployment completed. Processing results...`, configuration.projectName);
     const resources = parseCloudFormationOutputs(deploymentResult.outputs);
     
     return {
@@ -57,13 +57,22 @@ export async function deployApplication(params: any, statusCallback?: StatusCall
   }
 }
 
+import { storeDeploymentProgress } from './status.js';
+
 /**
  * Send a status update via the callback if provided
  */
-function sendStatus(callback?: StatusCallback, message?: string): void {
-  if (callback && message) {
-    callback(message);
-    console.log(message); // Also log to console
+function sendStatus(callback?: StatusCallback, message?: string, projectName?: string): void {
+  if (message) {
+    if (callback) {
+      callback(message);
+    }
+    console.log(message); // Log to console
+    
+    // Store progress in the deployment status file if project name is provided
+    if (projectName) {
+      storeDeploymentProgress(projectName, message);
+    }
   }
 }
 

@@ -1,49 +1,48 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { getDeploymentStatus } from "../deployment/status.js";
-import { getTemplateInfo } from "../deployment/templates.js";
-import { getResourceInventory } from "../aws/resources.js";
-
-/**
- * Resource registry to keep track of all available resources
- */
-const resourceRegistry = {
-  // Core resource categories
-  "deployment": {
-    description: "Information about deployed applications",
-    patterns: ["deployment:*"],
-    examples: ["deployment:my-api"]
-  },
-  "template": {
-    description: "Information about available deployment templates",
-    patterns: ["template:list", "template:*"],
-    examples: ["template:list", "template:express-backend"]
-  },
-  "resources": {
-    description: "Information about AWS resources for deployed applications",
-    patterns: ["resources:list", "resources:*", "resources:templates"],
-    examples: ["resources:list", "resources:my-api", "resources:templates"]
-  },
-  // Discovery resource
-  "mcp": {
-    description: "MCP server information and resource discovery",
-    patterns: ["mcp:resources"],
-    examples: ["mcp:resources"]
-  }
-};
+import { getTemplateInfo, listTemplates } from "../deployment/templates.js";
+import { getDeploymentStatus, listDeployments } from "../deployment/status.js";
 
 /**
  * Register all deployment resources with the MCP server
  */
 export function registerDeploymentResources(server: McpServer) {
-  // Register resource discovery endpoint
+  // Register the mcp:resources resource for resource discovery
   server.resource(
-    "mcp",
     "mcp:resources",
+    "List all available resources",
     async () => {
       return {
         contents: [
           {
-            text: JSON.stringify(resourceRegistry, null, 2),
+            text: JSON.stringify({
+              resources: [
+                {
+                  pattern: "mcp:resources",
+                  description: "List all available resources",
+                  example: "mcp:resources"
+                },
+                {
+                  pattern: "template:list",
+                  description: "List all available deployment templates",
+                  example: "template:list"
+                },
+                {
+                  pattern: "template:{name}",
+                  description: "Get information about a specific template",
+                  example: "template:express-backend"
+                },
+                {
+                  pattern: "deployment:{project-name}",
+                  description: "Get information about a specific deployment",
+                  example: "deployment:my-api"
+                },
+                {
+                  pattern: "deployment:list",
+                  description: "List all deployments",
+                  example: "deployment:list"
+                }
+              ]
+            }, null, 2),
             uri: "mcp:resources",
             mimeType: "application/json"
           }
@@ -52,140 +51,85 @@ export function registerDeploymentResources(server: McpServer) {
     }
   );
 
-  // Register deployment status resource
+  // Register the template:list resource
   server.resource(
-    "deployment",
-    "deployment:*",
-    async (uri: any) => {
-      // Extract project name from URI (format: "deployment:project-name")
-      const uriStr = uri.toString();
-      const projectName = uriStr.split(":")[1];
-      
-      if (!projectName) {
-        throw new Error("Invalid deployment URI format. Expected: deployment:project-name");
-      }
-      
+    "template:list",
+    "List all available deployment templates",
+    async () => {
+      const templates = await listTemplates();
+      return {
+        contents: [
+          {
+            text: JSON.stringify({ templates }, null, 2),
+            uri: "template:list",
+            mimeType: "application/json"
+          }
+        ]
+      };
+    }
+  );
+
+  // Register the template:{name} resource
+  server.resource(
+    "template:{name}",
+    "Get information about a specific template",
+    async (params: any) => {
+      const templateName = params.name;
       try {
-        const deploymentStatus = await getDeploymentStatus(projectName);
-        
+        const template = await getTemplateInfo(templateName);
         return {
           contents: [
             {
-              text: JSON.stringify(deploymentStatus, null, 2),
-              uri: uriStr,
+              text: JSON.stringify({ template }, null, 2),
+              uri: `template:${templateName}`,
               mimeType: "application/json"
             }
           ]
         };
       } catch (error) {
-        throw new Error(`Failed to retrieve deployment status: ${error instanceof Error ? error.message : String(error)}`);
+        throw new Error(`Template not found: ${templateName}`);
       }
     }
   );
 
-  // Register template information resource
+  // Register the deployment:{project-name} resource
   server.resource(
-    "template",
-    "template:*",
-    async (uri: any) => {
-      // Extract template name from URI (format: "template:template-name" or "template:list")
-      const uriStr = uri.toString();
-      const templateName = uriStr.split(":")[1];
-      
+    "deployment:{project-name}",
+    "Get information about a specific deployment",
+    async (params: any) => {
+      const projectName = params["project-name"];
       try {
-        if (templateName === "list") {
-          // List all available templates
-          const templates = await getTemplateInfo();
-          
-          return {
-            contents: [
-              {
-                text: JSON.stringify(templates, null, 2),
-                uri: uriStr,
-                mimeType: "application/json"
-              }
-            ]
-          };
-        } else {
-          // Get specific template information
-          const templateInfo = await getTemplateInfo(templateName);
-          
-          return {
-            contents: [
-              {
-                text: JSON.stringify(templateInfo, null, 2),
-                uri: uriStr,
-                mimeType: "application/json"
-              }
-            ]
-          };
-        }
+        const deployment = await getDeploymentStatus(projectName);
+        return {
+          contents: [
+            {
+              text: JSON.stringify({ deployment }, null, 2),
+              uri: `deployment:${projectName}`,
+              mimeType: "application/json"
+            }
+          ]
+        };
       } catch (error) {
-        throw new Error(`Failed to retrieve template information: ${error instanceof Error ? error.message : String(error)}`);
+        throw new Error(`Deployment not found: ${projectName}`);
       }
     }
   );
 
-  // Register AWS resource inventory resource
+  // Register the deployment:list resource
   server.resource(
-    "resources",
-    "resources:*",
-    async (uri: any) => {
-      // Extract project name from URI (format: "resources:project-name" or "resources:list")
-      const uriStr = uri.toString();
-      const projectName = uriStr.split(":")[1];
-      
-      try {
-        if (projectName === "list") {
-          // List all resources across projects
-          const resources = await getResourceInventory();
-          
-          return {
-            contents: [
-              {
-                text: JSON.stringify(resources, null, 2),
-                uri: uriStr,
-                mimeType: "application/json"
-              }
-            ]
-          };
-        } else if (projectName === "templates") {
-          // Special case for resources:templates (compatibility with some clients)
-          const templates = await getTemplateInfo();
-          
-          return {
-            contents: [
-              {
-                text: JSON.stringify(templates, null, 2),
-                uri: uriStr,
-                mimeType: "application/json"
-              }
-            ]
-          };
-        } else {
-          // Get resources for specific project
-          const resources = await getResourceInventory(projectName);
-          
-          return {
-            contents: [
-              {
-                text: JSON.stringify(resources, null, 2),
-                uri: uriStr,
-                mimeType: "application/json"
-              }
-            ]
-          };
-        }
-      } catch (error) {
-        const errorMessage = `Failed to retrieve resource inventory: ${error instanceof Error ? error.message : String(error)}`;
-        
-        // Provide helpful error message with suggestions
-        if (uriStr === "resources:templates") {
-          throw new Error(`${errorMessage}. Did you mean 'template:list' to get all templates?`);
-        } else {
-          throw new Error(errorMessage);
-        }
-      }
+    "deployment:list",
+    "List all deployments",
+    async () => {
+      const deployments = await listDeployments();
+      return {
+        contents: [
+          {
+            text: JSON.stringify({ deployments }, null, 2),
+            uri: "deployment:list",
+            mimeType: "application/json"
+          }
+        ]
+      };
     }
   );
 }

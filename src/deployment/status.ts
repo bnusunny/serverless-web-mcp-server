@@ -1,154 +1,136 @@
 import fs from 'fs';
 import path from 'path';
-import { execSync } from 'child_process';
-import { loadConfig } from '../config.js';
+import os from 'os';
+
+// Define the directory where deployment status files will be stored
+const DEPLOYMENT_STATUS_DIR = path.join(os.tmpdir(), 'serverless-web-mcp-deployments');
+
+// Ensure the directory exists
+if (!fs.existsSync(DEPLOYMENT_STATUS_DIR)) {
+  fs.mkdirSync(DEPLOYMENT_STATUS_DIR, { recursive: true });
+}
 
 /**
- * Get the status of a deployment
+ * Store deployment result for later retrieval
  */
-export async function getDeploymentStatus(projectName: string): Promise<any> {
-  const config = loadConfig();
+export function storeDeploymentResult(projectName: string, result: any): void {
+  const statusFile = path.join(DEPLOYMENT_STATUS_DIR, `${projectName}.json`);
   
   try {
-    // Check if deployment exists locally
-    const deploymentFile = path.join(process.cwd(), 'deployments', `${projectName}.json`);
+    fs.writeFileSync(statusFile, JSON.stringify({
+      status: 'completed',
+      timestamp: new Date().toISOString(),
+      result
+    }, null, 2));
     
-    if (!fs.existsSync(deploymentFile)) {
-      throw new Error(`Deployment not found for project: ${projectName}`);
-    }
+    console.log(`Deployment status stored for ${projectName}`);
+  } catch (error) {
+    console.error(`Failed to store deployment status for ${projectName}:`, error);
+  }
+}
+
+/**
+ * Store deployment error for later retrieval
+ */
+export function storeDeploymentError(projectName: string, error: any): void {
+  const statusFile = path.join(DEPLOYMENT_STATUS_DIR, `${projectName}.json`);
+  
+  try {
+    fs.writeFileSync(statusFile, JSON.stringify({
+      status: 'failed',
+      timestamp: new Date().toISOString(),
+      error: error instanceof Error ? error.message : String(error)
+    }, null, 2));
     
-    // Load deployment information
-    const deploymentInfo = JSON.parse(fs.readFileSync(deploymentFile, 'utf8'));
-    
-    // Get CloudFormation stack status
-    try {
-      const stackOutput = execSync(
-        `aws cloudformation describe-stacks --stack-name ${projectName} --region ${config.aws.region} --query "Stacks[0].StackStatus" --output text`,
-        { encoding: 'utf8' }
-      );
+    console.log(`Deployment error stored for ${projectName}`);
+  } catch (error) {
+    console.error(`Failed to store deployment error for ${projectName}:`, error);
+  }
+}
+
+/**
+ * Store deployment progress update
+ */
+export function storeDeploymentProgress(projectName: string, message: string): void {
+  const progressFile = path.join(DEPLOYMENT_STATUS_DIR, `${projectName}-progress.log`);
+  
+  try {
+    // Append to the progress log
+    fs.appendFileSync(progressFile, `[${new Date().toISOString()}] ${message}\n`);
+  } catch (error) {
+    console.error(`Failed to store deployment progress for ${projectName}:`, error);
+  }
+}
+
+/**
+ * Get deployment status for a project
+ */
+export async function getDeploymentStatus(projectName: string): Promise<any> {
+  const statusFile = path.join(DEPLOYMENT_STATUS_DIR, `${projectName}.json`);
+  const progressFile = path.join(DEPLOYMENT_STATUS_DIR, `${projectName}-progress.log`);
+  
+  try {
+    // Check if status file exists
+    if (fs.existsSync(statusFile)) {
+      const statusContent = fs.readFileSync(statusFile, 'utf8');
+      const status = JSON.parse(statusContent);
       
-      deploymentInfo.stackStatus = stackOutput.trim();
-    } catch (error) {
-      deploymentInfo.stackStatus = 'UNKNOWN';
+      // Add progress logs if available
+      if (fs.existsSync(progressFile)) {
+        const progressContent = fs.readFileSync(progressFile, 'utf8');
+        status.progressLogs = progressContent.split('\n').filter(line => line.trim() !== '');
+      }
+      
+      return status;
+    } else if (fs.existsSync(progressFile)) {
+      // If only progress file exists, deployment is still in progress
+      const progressContent = fs.readFileSync(progressFile, 'utf8');
+      
+      return {
+        status: 'in_progress',
+        timestamp: new Date().toISOString(),
+        progressLogs: progressContent.split('\n').filter(line => line.trim() !== '')
+      };
+    } else {
+      // No deployment found
+      return {
+        status: 'not_found',
+        message: `No deployment found for project: ${projectName}`
+      };
     }
-    
-    // Get resource statuses
-    const resourceStatuses = await Promise.all(
-      deploymentInfo.resources.map(async (resource: any) => {
-        const status = await getResourceStatus(resource.type, resource.id, config.aws.region);
-        return {
-          ...resource,
-          status
-        };
-      })
-    );
-    
-    deploymentInfo.resources = resourceStatuses;
-    
-    // Get domain information if available
-    const domainFile = path.join(process.cwd(), 'domains', `${projectName}.json`);
-    if (fs.existsSync(domainFile)) {
-      deploymentInfo.domain = JSON.parse(fs.readFileSync(domainFile, 'utf8'));
-    }
-    
-    // Get database information if available
-    const databaseFile = path.join(process.cwd(), 'databases', `${projectName}.json`);
-    if (fs.existsSync(databaseFile)) {
-      deploymentInfo.database = JSON.parse(fs.readFileSync(databaseFile, 'utf8'));
-    }
-    
-    return deploymentInfo;
   } catch (error) {
     console.error(`Failed to get deployment status for ${projectName}:`, error);
-    throw error;
+    throw new Error(`Failed to get deployment status: ${error instanceof Error ? error.message : String(error)}`);
   }
 }
 
 /**
- * Get the status of a specific AWS resource
+ * List all deployments
  */
-async function getResourceStatus(resourceType: string, resourceId: string, region: string): Promise<string> {
+export async function listDeployments(): Promise<any[]> {
   try {
-    switch (resourceType) {
-      case 'Lambda':
-        return getLambdaStatus(resourceId, region);
-      case 'ApiGateway':
-        return getApiGatewayStatus(resourceId, region);
-      case 'S3Bucket':
-        return getS3BucketStatus(resourceId, region);
-      case 'CloudFront':
-        return getCloudFrontStatus(resourceId, region);
-      default:
-        return 'UNKNOWN';
+    const files = fs.readdirSync(DEPLOYMENT_STATUS_DIR);
+    const deployments: any[] = [];
+    
+    // Process each JSON status file
+    for (const file of files) {
+      if (file.endsWith('.json') && !file.includes('-progress')) {
+        const projectName = file.replace('.json', '');
+        try {
+          const status = await getDeploymentStatus(projectName);
+          deployments.push({
+            projectName,
+            ...status
+          });
+        } catch (error) {
+          console.error(`Error processing deployment ${projectName}:`, error);
+        }
+      }
     }
-  } catch (error) {
-    console.error(`Failed to get status for ${resourceType} ${resourceId}:`, error);
-    return 'ERROR';
-  }
-}
-
-/**
- * Get Lambda function status
- */
-function getLambdaStatus(functionArn: string, region: string): string {
-  try {
-    const functionName = functionArn.split(':').pop();
     
-    const output = execSync(
-      `aws lambda get-function --function-name ${functionName} --region ${region} --query "Configuration.State" --output text`,
-      { encoding: 'utf8' }
-    );
-    
-    return output.trim();
+    return deployments;
   } catch (error) {
-    return 'INACTIVE';
-  }
-}
-
-/**
- * Get API Gateway status
- */
-function getApiGatewayStatus(apiId: string, region: string): string {
-  try {
-    const output = execSync(
-      `aws apigateway get-rest-api --rest-api-id ${apiId} --region ${region} --output json`,
-      { encoding: 'utf8' }
-    );
-    
-    return 'ACTIVE'; // If the command succeeds, the API is active
-  } catch (error) {
-    return 'INACTIVE';
-  }
-}
-
-/**
- * Get S3 bucket status
- */
-function getS3BucketStatus(bucketName: string, region: string): string {
-  try {
-    execSync(
-      `aws s3api head-bucket --bucket ${bucketName} --region ${region}`,
-      { encoding: 'utf8' }
-    );
-    
-    return 'ACTIVE'; // If the command succeeds, the bucket exists
-  } catch (error) {
-    return 'INACTIVE';
-  }
-}
-
-/**
- * Get CloudFront distribution status
- */
-function getCloudFrontStatus(distributionId: string, region: string): string {
-  try {
-    const output = execSync(
-      `aws cloudfront get-distribution --id ${distributionId} --query "Distribution.Status" --output text`,
-      { encoding: 'utf8' }
-    );
-    
-    return output.trim();
-  } catch (error) {
-    return 'INACTIVE';
+    console.error('Failed to list deployments:', error);
+    return [];
   }
 }
