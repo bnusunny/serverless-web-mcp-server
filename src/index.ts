@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { registerDeploymentTools } from "./mcp/tools.js";
 import { registerDeploymentResources } from "./mcp/resources.js";
 import express from "express";
@@ -121,32 +122,21 @@ if (transport === "http") {
 } else {
   // Stdio transport - this is the mode that Roo Code uses
   console.log("Serverless Web MCP Server started in stdio mode");
-  console.log("Ready to receive JSON-RPC requests");
   
   // Set up a buffer for incoming data
   let buffer = "";
-  let inProgress = false;
   
   process.stdin.setEncoding('utf8');
   
   process.stdin.on('data', (chunk) => {
-    // Add the chunk to the buffer
     buffer += chunk;
-    
-    // If we're already processing a request, don't try to parse again
-    if (inProgress) return;
     
     try {
       // Try to parse the buffer as JSON
       const request = JSON.parse(buffer);
+      buffer = ""; // Clear buffer on successful parse
       
-      // Clear buffer on successful parse
-      buffer = "";
-      
-      // Mark that we're processing a request
-      inProgress = true;
-      
-      // Get the handle method from the server
+      // Use any available method to handle the request
       const handleMethod = (server as any).handle || (server as any).handleRequest;
       
       if (typeof handleMethod !== 'function') {
@@ -159,7 +149,6 @@ if (transport === "http") {
           },
           id: request.id || null
         }) + "\n");
-        inProgress = false;
         return;
       }
       
@@ -167,7 +156,6 @@ if (transport === "http") {
       handleMethod.call(server, request)
         .then((response: any) => {
           process.stdout.write(JSON.stringify(response) + "\n");
-          inProgress = false;
         })
         .catch((error: any) => {
           console.error("Error handling request:", error);
@@ -179,14 +167,12 @@ if (transport === "http") {
             },
             id: request.id || null
           }) + "\n");
-          inProgress = false;
         });
     } catch (e) {
       // If we can't parse the buffer as JSON yet, just wait for more data
       if (!(e instanceof SyntaxError)) {
         console.error("Unexpected error:", e);
       }
-      // Don't clear the buffer or set inProgress if we couldn't parse the JSON
     }
   });
   
