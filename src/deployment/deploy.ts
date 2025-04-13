@@ -20,30 +20,87 @@ export async function deployApplication(params: any): Promise<any> {
     // Get template information
     const templateInfo = await getTemplateInfo(templateName);
     
-    // For now, just return a mock deployment result
+    // Generate appropriate resources based on deployment type
+    const resources = generateResourcesForDeployment(deploymentType, configuration);
+    
     // In a real implementation, this would use AWS SAM CLI to deploy the application
+    // For now, we're returning a mock deployment result with appropriate resources
     return {
       status: 'deployed',
       deploymentType,
       framework,
       projectName: configuration.projectName,
       template: templateInfo,
-      resources: [
-        {
-          type: 'AWS::Lambda::Function',
-          name: `${configuration.projectName}-function`,
-          arn: `arn:aws:lambda:${configuration.region}:123456789012:function:${configuration.projectName}-function`
-        },
-        {
-          type: 'AWS::ApiGateway::RestApi',
-          name: `${configuration.projectName}-api`,
-          url: `https://abcdef1234.execute-api.${configuration.region}.amazonaws.com/prod`
-        }
-      ]
+      resources
     };
   } catch (error) {
     console.error('Deployment failed:', error);
     throw error;
+  }
+}
+
+/**
+ * Generate appropriate AWS resources based on deployment type
+ */
+function generateResourcesForDeployment(deploymentType: string, configuration: any): any[] {
+  const projectName = configuration.projectName;
+  const region = configuration.region || 'us-east-1';
+  
+  switch (deploymentType) {
+    case 'backend':
+      return [
+        {
+          type: 'AWS::Lambda::Function',
+          name: `${projectName}-function`,
+          arn: `arn:aws:lambda:${region}:123456789012:function:${projectName}-function`
+        },
+        {
+          type: 'AWS::ApiGateway::RestApi',
+          name: `${projectName}-api`,
+          url: `https://abcdef1234.execute-api.${region}.amazonaws.com/prod`
+        }
+      ];
+      
+    case 'frontend':
+      return [
+        {
+          type: 'AWS::S3::Bucket',
+          name: `${projectName}-bucket`,
+          url: `${projectName}-bucket.s3.amazonaws.com`
+        },
+        {
+          type: 'AWS::CloudFront::Distribution',
+          name: `${projectName}-distribution`,
+          url: `d1234abcdef.cloudfront.net`
+        }
+      ];
+      
+    case 'fullstack':
+      return [
+        {
+          type: 'AWS::Lambda::Function',
+          name: `${projectName}-backend-function`,
+          arn: `arn:aws:lambda:${region}:123456789012:function:${projectName}-backend-function`
+        },
+        {
+          type: 'AWS::ApiGateway::RestApi',
+          name: `${projectName}-api`,
+          url: `https://abcdef1234.execute-api.${region}.amazonaws.com/prod`
+        },
+        {
+          type: 'AWS::S3::Bucket',
+          name: `${projectName}-frontend-bucket`,
+          url: `${projectName}-frontend-bucket.s3.amazonaws.com`
+        },
+        {
+          type: 'AWS::CloudFront::Distribution',
+          name: `${projectName}-frontend-distribution`,
+          url: `d1234abcdef.cloudfront.net`
+        }
+      ];
+      
+    default:
+      throw new Error(`Unsupported deployment type: ${deploymentType}`);
   }
 }
 
@@ -83,6 +140,57 @@ function validateDeploymentParams(params: any): void {
   
   // Validate framework based on deployment type
   validateFramework(deploymentType, framework);
+  
+  // Validate configuration based on deployment type
+  validateConfiguration(deploymentType, configuration);
+}
+
+/**
+ * Validate configuration based on deployment type
+ */
+function validateConfiguration(deploymentType: string, configuration: any): void {
+  // Common validation
+  if (!configuration.region) {
+    configuration.region = 'us-east-1'; // Default region
+  }
+  
+  // Deployment-specific validation
+  switch (deploymentType) {
+    case 'backend':
+      if (!configuration.backendConfiguration) {
+        configuration.backendConfiguration = {}; // Use defaults if not provided
+      }
+      break;
+      
+    case 'frontend':
+      if (!configuration.frontendConfiguration) {
+        configuration.frontendConfiguration = {}; // Use defaults if not provided
+      }
+      
+      // Set default values for frontend configuration
+      if (!configuration.frontendConfiguration.indexDocument) {
+        configuration.frontendConfiguration.indexDocument = 'index.html';
+      }
+      
+      if (!configuration.frontendConfiguration.errorDocument) {
+        configuration.frontendConfiguration.errorDocument = 'index.html';
+      }
+      break;
+      
+    case 'fullstack':
+      // Ensure both backend and frontend configurations exist
+      if (!configuration.backendConfiguration) {
+        configuration.backendConfiguration = {}; // Use defaults if not provided
+      }
+      
+      if (!configuration.frontendConfiguration) {
+        configuration.frontendConfiguration = {
+          indexDocument: 'index.html',
+          errorDocument: 'index.html'
+        };
+      }
+      break;
+  }
 }
 
 /**
