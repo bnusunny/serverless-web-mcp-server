@@ -76,6 +76,14 @@ export function registerDeploymentTools(server: McpServer) {
         // and continue the deployment in the background
         console.log(`Starting deployment of ${params.deploymentType} application: ${params.configuration.projectName}...`);
         
+        // Initialize deployment status immediately so it can be queried
+        const { initializeDeploymentStatus } = await import("../deployment/status.js");
+        initializeDeploymentStatus(
+          params.configuration.projectName, 
+          params.deploymentType, 
+          params.framework
+        );
+        
         // Start the deployment process in the background
         setTimeout(() => {
           deployApplication(params, (status) => {

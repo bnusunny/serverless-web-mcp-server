@@ -11,8 +11,25 @@ if (!fs.existsSync(DEPLOYMENT_STATUS_DIR)) {
 }
 
 /**
- * Store deployment result for later retrieval
+ * Initialize deployment status for a new deployment
  */
+export function initializeDeploymentStatus(projectName: string, deploymentType: string, framework: string): void {
+  const statusFile = path.join(DEPLOYMENT_STATUS_DIR, `${projectName}.json`);
+  
+  try {
+    fs.writeFileSync(statusFile, JSON.stringify({
+      status: 'in_progress',
+      timestamp: new Date().toISOString(),
+      deploymentType,
+      framework,
+      message: `Deployment of ${projectName} initiated`
+    }, null, 2));
+    
+    console.log(`Deployment status initialized for ${projectName}`);
+  } catch (error) {
+    console.error(`Failed to initialize deployment status for ${projectName}:`, error);
+  }
+}
 export function storeDeploymentResult(projectName: string, result: any): void {
   const statusFile = path.join(DEPLOYMENT_STATUS_DIR, `${projectName}.json`);
   

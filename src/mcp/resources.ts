@@ -100,6 +100,11 @@ export function registerDeploymentResources(server: McpServer) {
       const projectName = params["project-name"];
       try {
         const deployment = await getDeploymentStatus(projectName);
+        
+        if (deployment.status === 'not_found') {
+          throw new Error(`Deployment not found: ${projectName}`);
+        }
+        
         return {
           contents: [
             {
