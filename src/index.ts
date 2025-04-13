@@ -84,7 +84,7 @@ if (transport === "http") {
   const transports: { [sessionId: string]: SSEServerTransport } = {};
   
   // SSE endpoint for establishing connection
-  app.get("/mcp/sse", async (req, res) => {
+  app.get("/sse", async (req, res) => {
     console.log("New SSE connection established");
     
     // Set headers for SSE
@@ -93,7 +93,7 @@ if (transport === "http") {
     res.setHeader('Connection', 'keep-alive');
     
     // Create a new SSE transport
-    const transport = new SSEServerTransport('/mcp/messages', res);
+    const transport = new SSEServerTransport('/messages', res);
     const sessionId = transport.sessionId;
     
     // Store the transport
@@ -157,7 +157,7 @@ if (transport === "http") {
   });
   
   // Message endpoint for receiving client messages
-  app.post("/mcp/messages", async (req, res) => {
+  app.post("/messages", async (req, res) => {
     const sessionId = req.query.sessionId as string;
     
     if (!sessionId) {
@@ -173,10 +173,122 @@ if (transport === "http") {
     }
     
     try {
-      await transport.handlePostMessage(req, res);
+      // Log the incoming request for debugging
+      if (process.env.DEBUG) {
+        console.log(`Received request for session ${sessionId}:`, req.body);
+      }
+      
+      // Get the request from the body
+      const request = req.body;
+      
+      // Process the request based on its method
+      let response;
+      
+      if (request.method === "resource/list") {
+        // Handle resource/list request
+        response = {
+          jsonrpc: "2.0",
+          id: request.id,
+          result: {
+            resources: [
+              { uri: "mcp:resources", description: "List of all available resources" },
+              { uri: "template:list", description: "List of available deployment templates" }
+              // Add more resources here
+            ]
+          }
+        };
+      } else if (request.method === "resource/get") {
+        // Handle resource/get request
+        const uri = request.params?.uri;
+        
+        if (uri === "mcp:resources") {
+          response = {
+            jsonrpc: "2.0",
+            id: request.id,
+            result: {
+              contents: [{
+                uri: "mcp:resources",
+                text: "Available resources:\n- mcp:resources: List of all available resources\n- template:list: List of available deployment templates"
+              }]
+            }
+          };
+        } else if (uri === "template:list") {
+          response = {
+            jsonrpc: "2.0",
+            id: request.id,
+            result: {
+              contents: [{
+                uri: "template:list",
+                text: "Available templates:\n- express-api: Express.js API template\n- react-app: React frontend template\n- fullstack-app: Combined backend and frontend template"
+              }]
+            }
+          };
+        } else {
+          response = {
+            jsonrpc: "2.0",
+            id: request.id,
+            error: {
+              code: -32602,
+              message: `Resource not found: ${uri}`
+            }
+          };
+        }
+      } else if (request.method === "tool/list") {
+        // Handle tool/list request
+        response = {
+          jsonrpc: "2.0",
+          id: request.id,
+          result: {
+            tools: [
+              { 
+                name: "deploy", 
+                description: "Deploy web applications to AWS serverless infrastructure",
+                parameters: {
+                  deploymentType: {
+                    type: "string",
+                    enum: ["backend", "frontend", "fullstack"],
+                    description: "Type of deployment"
+                  },
+                  // Add more parameters here
+                }
+              },
+              { 
+                name: "get-logs", 
+                description: "Retrieve application logs"
+              }
+              // Add more tools here
+            ]
+          }
+        };
+      } else {
+        // Handle unknown method
+        response = {
+          jsonrpc: "2.0",
+          id: request.id,
+          error: {
+            code: -32601,
+            message: `Method not found: ${request.method}`
+          }
+        };
+      }
+      
+      // Log the response for debugging
+      if (process.env.DEBUG) {
+        console.log(`Sending response for session ${sessionId}:`, response);
+      }
+      
+      // Send the response
+      res.json(response);
     } catch (error) {
       console.error("Error handling message:", error);
-      res.status(500).json({ error: "Internal server error" });
+      res.status(500).json({ 
+        jsonrpc: "2.0",
+        id: req.body?.id || null,
+        error: {
+          code: -32000,
+          message: error instanceof Error ? error.message : "Internal server error"
+        }
+      });
     }
   });
   
@@ -281,7 +393,7 @@ if (transport === "http") {
           
           function connectSSE() {
             log('Connecting to SSE endpoint...');
-            eventSource = new EventSource('/mcp/sse');
+            eventSource = new EventSource('/sse');
             
             eventSource.onopen = () => {
               log('SSE connection established');
@@ -342,7 +454,7 @@ if (transport === "http") {
             log('Sending: ' + JSON.stringify(request, null, 2));
             
             try {
-              const response = await fetch(\`/mcp/messages?sessionId=\${sessionId}\`, {
+              const response = await fetch(\`/messages?sessionId=\${sessionId}\`, {
                 method: 'POST',
                 headers: {
                   'Content-Type': 'application/json'
@@ -390,8 +502,8 @@ if (transport === "http") {
   
   app.listen(port, () => {
     console.log(`Serverless Web MCP Server listening on port ${port}`);
-    console.log(`MCP SSE endpoint: http://localhost:${port}/mcp/sse`);
-    console.log(`MCP message endpoint: http://localhost:${port}/mcp/messages`);
+    console.log(`MCP SSE endpoint: http://localhost:${port}/sse`);
+    console.log(`MCP message endpoint: http://localhost:${port}/messages`);
     console.log(`Health check: http://localhost:${port}/health`);
     console.log(`Test page: http://localhost:${port}/`);
     console.log(`Server is ready to accept requests`);
