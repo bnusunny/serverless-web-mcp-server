@@ -10,6 +10,7 @@ import minimist from "minimist";
 import fs from "fs";
 import path from "path";
 import cors from "cors";
+import bodyParser from "body-parser";
 
 // Parse command line arguments
 const argv = minimist(process.argv.slice(2), {
@@ -77,8 +78,22 @@ if (transport === "http") {
   const port = process.env.PORT || 3000;
   
   // Enable CORS
-  app.use(cors());
-  app.use(express.json());
+  app.use(cors({
+    origin: '*',
+    methods: ['GET', 'POST', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization']
+  }));
+  
+  // Parse JSON bodies
+  app.use(bodyParser.json({
+    limit: '4mb'
+  }));
+  
+  // Parse URL-encoded bodies
+  app.use(bodyParser.urlencoded({
+    extended: true,
+    limit: '4mb'
+  }));
   
   // Store active SSE transports by session ID
   const transports: { [sessionId: string]: SSEServerTransport } = {};
@@ -177,9 +192,23 @@ if (transport === "http") {
     try {
       if (process.env.DEBUG) {
         console.log(`Received request for session ${sessionId}:`, req.body);
+        console.log(`Request headers:`, req.headers);
       }
       
-      await transport.handlePostMessage(req, res);
+      // Ensure we have a valid request body
+      if (!req.body) {
+        return res.status(400).json({ 
+          jsonrpc: "2.0",
+          id: null,
+          error: {
+            code: -32700,
+            message: "Missing request body"
+          }
+        });
+      }
+      
+      // Pass the parsed body directly to handlePostMessage
+      await transport.handlePostMessage(req, res, req.body);
       
       if (process.env.DEBUG) {
         console.log(`Handled request for session ${sessionId}`);
