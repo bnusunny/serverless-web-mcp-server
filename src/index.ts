@@ -173,112 +173,15 @@ if (transport === "http") {
     }
     
     try {
-      // Log the incoming request for debugging
       if (process.env.DEBUG) {
         console.log(`Received request for session ${sessionId}:`, req.body);
       }
       
-      // Get the request from the body
-      const request = req.body;
+      await transport.handlePostMessage(req, res);
       
-      // Process the request based on its method
-      let response;
-      
-      if (request.method === "resource/list") {
-        // Handle resource/list request
-        response = {
-          jsonrpc: "2.0",
-          id: request.id,
-          result: {
-            resources: [
-              { uri: "mcp:resources", description: "List of all available resources" },
-              { uri: "template:list", description: "List of available deployment templates" }
-              // Add more resources here
-            ]
-          }
-        };
-      } else if (request.method === "resource/get") {
-        // Handle resource/get request
-        const uri = request.params?.uri;
-        
-        if (uri === "mcp:resources") {
-          response = {
-            jsonrpc: "2.0",
-            id: request.id,
-            result: {
-              contents: [{
-                uri: "mcp:resources",
-                text: "Available resources:\n- mcp:resources: List of all available resources\n- template:list: List of available deployment templates"
-              }]
-            }
-          };
-        } else if (uri === "template:list") {
-          response = {
-            jsonrpc: "2.0",
-            id: request.id,
-            result: {
-              contents: [{
-                uri: "template:list",
-                text: "Available templates:\n- express-api: Express.js API template\n- react-app: React frontend template\n- fullstack-app: Combined backend and frontend template"
-              }]
-            }
-          };
-        } else {
-          response = {
-            jsonrpc: "2.0",
-            id: request.id,
-            error: {
-              code: -32602,
-              message: `Resource not found: ${uri}`
-            }
-          };
-        }
-      } else if (request.method === "tool/list") {
-        // Handle tool/list request
-        response = {
-          jsonrpc: "2.0",
-          id: request.id,
-          result: {
-            tools: [
-              { 
-                name: "deploy", 
-                description: "Deploy web applications to AWS serverless infrastructure",
-                parameters: {
-                  deploymentType: {
-                    type: "string",
-                    enum: ["backend", "frontend", "fullstack"],
-                    description: "Type of deployment"
-                  },
-                  // Add more parameters here
-                }
-              },
-              { 
-                name: "get-logs", 
-                description: "Retrieve application logs"
-              }
-              // Add more tools here
-            ]
-          }
-        };
-      } else {
-        // Handle unknown method
-        response = {
-          jsonrpc: "2.0",
-          id: request.id,
-          error: {
-            code: -32601,
-            message: `Method not found: ${request.method}`
-          }
-        };
-      }
-      
-      // Log the response for debugging
       if (process.env.DEBUG) {
-        console.log(`Sending response for session ${sessionId}:`, response);
+        console.log(`Handled request for session ${sessionId}`);
       }
-      
-      // Send the response
-      res.json(response);
     } catch (error) {
       console.error("Error handling message:", error);
       res.status(500).json({ 
