@@ -212,6 +212,14 @@ if (transport === "http") {
               getMcpResourcesButton.disabled = false;
               getTemplateListButton.disabled = false;
               listToolsButton.disabled = false;
+              
+              // Debug info
+              log('Connection state set to connected');
+              log('Button states: ' + 
+                'listResources=' + (listResourcesButton.disabled ? 'disabled' : 'enabled') + ', ' +
+                'getMcpResources=' + (getMcpResourcesButton.disabled ? 'disabled' : 'enabled') + ', ' +
+                'getTemplateList=' + (getTemplateListButton.disabled ? 'disabled' : 'enabled') + ', ' +
+                'listTools=' + (listToolsButton.disabled ? 'disabled' : 'enabled'));
             } else {
               connectionStatus.textContent = 'Disconnected';
               connectionStatus.className = 'status disconnected';
@@ -246,7 +254,11 @@ if (transport === "http") {
                 if (data.method === 'connection/init' && data.params && data.params.sessionId) {
                   sessionId = data.params.sessionId;
                   log('Session ID: ' + sessionId);
-                  setConnected(true);
+                  
+                  // Force DOM update by using setTimeout
+                  setTimeout(() => {
+                    setConnected(true);
+                  }, 0);
                 }
               } catch (error) {
                 log('Error parsing SSE message: ' + error.message);
