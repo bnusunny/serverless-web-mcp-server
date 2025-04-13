@@ -150,6 +150,8 @@ Usage:
 Options:
   --debug, -d                 Enable debug logging
   --templates, -t <path>      Specify templates directory path
+  --transport, -m <mode>      Transport method (stdio or http, default: stdio)
+  --port, -p <number>         HTTP server port (default: 3000, only used with http transport)
   --help, -h                  Show this help message
   
 Environment Variables:
