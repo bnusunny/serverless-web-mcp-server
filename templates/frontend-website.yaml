@@ -1,0 +1,108 @@
+# Metadata: Framework: Any
+# Metadata: Type: Frontend
+# Metadata: Description: Template for frontend website with S3 and CloudFront
+
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Frontend website with S3 and CloudFront
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: ${PROJECT_NAME}
+    Description: Name of the project
+  
+  IndexDocument:
+    Type: String
+    Default: ${INDEX_DOCUMENT}
+    Description: Index document for S3 website
+  
+  ErrorDocument:
+    Type: String
+    Default: ${ERROR_DOCUMENT}
+    Description: Error document for S3 website
+
+Resources:
+  # S3 bucket for website hosting
+  WebsiteBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub ${ProjectName}-website-${AWS::AccountId}
+      WebsiteConfiguration:
+        IndexDocument: !Ref IndexDocument
+        ErrorDocument: !Ref ErrorDocument
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+  # Bucket policy to allow CloudFront access
+  WebsiteBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref WebsiteBucket
+      PolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: cloudfront.amazonaws.com
+            Action: s3:GetObject
+            Resource: !Sub ${WebsiteBucket.Arn}/*
+            Condition:
+              StringEquals:
+                AWS:SourceArn: !Sub arn:aws:cloudfront::${AWS::AccountId}:distribution/${CloudFrontDistribution}
+
+  # CloudFront Origin Access Control
+  CloudFrontOriginAccessControl:
+    Type: AWS::CloudFront::OriginAccessControl
+    Properties:
+      OriginAccessControlConfig:
+        Name: !Sub ${ProjectName}-oac
+        OriginAccessControlOriginType: s3
+        SigningBehavior: always
+        SigningProtocol: sigv4
+
+  # CloudFront distribution
+  CloudFrontDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Origins:
+          - DomainName: !GetAtt WebsiteBucket.RegionalDomainName
+            Id: S3Origin
+            OriginAccessControlId: !Ref CloudFrontOriginAccessControl
+            S3OriginConfig:
+              OriginAccessIdentity: ''
+        Enabled: true
+        DefaultRootObject: !Ref IndexDocument
+        DefaultCacheBehavior:
+          AllowedMethods:
+            - GET
+            - HEAD
+            - OPTIONS
+          TargetOriginId: S3Origin
+          CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6  # Managed-CachingOptimized
+          OriginRequestPolicyId: 88a5eaf4-2fd4-4709-b370-b4c650ea3fcf  # Managed-CORS-S3Origin
+          ViewerProtocolPolicy: redirect-to-https
+        PriceClass: PriceClass_100
+        CustomErrorResponses:
+          - ErrorCode: 404
+            ResponseCode: 200
+            ResponsePagePath: !Sub /${IndexDocument}
+          - ErrorCode: 403
+            ResponseCode: 200
+            ResponsePagePath: !Sub /${IndexDocument}
+
+Outputs:
+  WebsiteBucket:
+    Description: S3 bucket for website hosting
+    Value: !Ref WebsiteBucket
+  
+  CloudFrontDistribution:
+    Description: CloudFront distribution ID
+    Value: !Ref CloudFrontDistribution
+  
+  WebsiteUrl:
+    Description: CloudFront website URL
+    Value: !Sub https://${CloudFrontDistribution.DomainName}

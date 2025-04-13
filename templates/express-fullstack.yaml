@@ -1,0 +1,193 @@
+# Metadata: Framework: Express.js + React
+# Metadata: Type: Fullstack
+# Metadata: Description: Template for fullstack application with Express.js backend API and React frontend
+
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Fullstack application with Express.js backend API and React frontend
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: ${PROJECT_NAME}
+    Description: Name of the project
+  
+  Runtime:
+    Type: String
+    Default: ${RUNTIME}
+    Description: Lambda runtime
+  
+  MemorySize:
+    Type: Number
+    Default: ${MEMORY_SIZE}
+    Description: Lambda memory size in MB
+  
+  Timeout:
+    Type: Number
+    Default: ${TIMEOUT}
+    Description: Lambda timeout in seconds
+  
+  IndexDocument:
+    Type: String
+    Default: ${INDEX_DOCUMENT}
+    Description: Index document for S3 website
+  
+  ErrorDocument:
+    Type: String
+    Default: ${ERROR_DOCUMENT}
+    Description: Error document for S3 website
+
+Resources:
+  # Lambda function for Express.js API
+  ApiFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub ${ProjectName}-function
+      CodeUri: ./backend
+      Handler: index.handler
+      Runtime: !Ref Runtime
+      MemorySize: !Ref MemorySize
+      Timeout: !Ref Timeout
+      Environment:
+        Variables:
+          NODE_ENV: production
+${ENVIRONMENT_VARIABLES}
+      Events:
+        ApiEvent:
+          Type: Api
+          Properties:
+            Path: /{proxy+}
+            Method: ANY
+      Layers:
+        - !Sub arn:aws:lambda:${AWS::Region}:753240598075:layer:LambdaAdapterLayerX86:1
+
+  # API Gateway
+  Api:
+    Type: AWS::Serverless::Api
+    Properties:
+      Name: !Ref ProjectName
+      StageName: prod
+      EndpointConfiguration: REGIONAL
+      Cors:
+        AllowMethods: "'*'"
+        AllowHeaders: "'*'"
+        AllowOrigin: "'*'"
+
+  # S3 bucket for website hosting
+  WebsiteBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub ${ProjectName}-website-${AWS::AccountId}
+      WebsiteConfiguration:
+        IndexDocument: !Ref IndexDocument
+        ErrorDocument: !Ref ErrorDocument
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+  # Bucket policy to allow CloudFront access
+  WebsiteBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref WebsiteBucket
+      PolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: cloudfront.amazonaws.com
+            Action: s3:GetObject
+            Resource: !Sub ${WebsiteBucket.Arn}/*
+            Condition:
+              StringEquals:
+                AWS:SourceArn: !Sub arn:aws:cloudfront::${AWS::AccountId}:distribution/${CloudFrontDistribution}
+
+  # CloudFront Origin Access Control
+  CloudFrontOriginAccessControl:
+    Type: AWS::CloudFront::OriginAccessControl
+    Properties:
+      OriginAccessControlConfig:
+        Name: !Sub ${ProjectName}-oac
+        OriginAccessControlOriginType: s3
+        SigningBehavior: always
+        SigningProtocol: sigv4
+
+  # CloudFront distribution with API Gateway origin
+  CloudFrontDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Origins:
+          - DomainName: !GetAtt WebsiteBucket.RegionalDomainName
+            Id: S3Origin
+            OriginAccessControlId: !Ref CloudFrontOriginAccessControl
+            S3OriginConfig:
+              OriginAccessIdentity: ''
+          - DomainName: !Sub ${Api}.execute-api.${AWS::Region}.amazonaws.com
+            Id: ApiOrigin
+            OriginPath: /prod
+            CustomOriginConfig:
+              HTTPPort: 80
+              HTTPSPort: 443
+              OriginProtocolPolicy: https-only
+              OriginSSLProtocols:
+                - TLSv1.2
+        Enabled: true
+        DefaultRootObject: !Ref IndexDocument
+        DefaultCacheBehavior:
+          AllowedMethods:
+            - GET
+            - HEAD
+            - OPTIONS
+          TargetOriginId: S3Origin
+          CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6  # Managed-CachingOptimized
+          OriginRequestPolicyId: 88a5eaf4-2fd4-4709-b370-b4c650ea3fcf  # Managed-CORS-S3Origin
+          ViewerProtocolPolicy: redirect-to-https
+        CacheBehaviors:
+          - PathPattern: /api/*
+            AllowedMethods:
+              - GET
+              - HEAD
+              - OPTIONS
+              - PUT
+              - POST
+              - PATCH
+              - DELETE
+            TargetOriginId: ApiOrigin
+            CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad  # Managed-CachingDisabled
+            OriginRequestPolicyId: b689b0a8-53d0-40ab-baf2-68738e2966ac  # Managed-AllViewerExceptHostHeader
+            ViewerProtocolPolicy: redirect-to-https
+        PriceClass: PriceClass_100
+        CustomErrorResponses:
+          - ErrorCode: 404
+            ResponseCode: 200
+            ResponsePagePath: !Sub /${IndexDocument}
+          - ErrorCode: 403
+            ResponseCode: 200
+            ResponsePagePath: !Sub /${IndexDocument}
+
+Outputs:
+  ApiEndpoint:
+    Description: API Gateway endpoint URL
+    Value: !Sub https://${Api}.execute-api.${AWS::Region}.amazonaws.com/prod/
+  
+  ApiId:
+    Description: API Gateway ID
+    Value: !Ref Api
+  
+  LambdaFunctionArn:
+    Description: Lambda function ARN
+    Value: !GetAtt ApiFunction.Arn
+  
+  WebsiteBucket:
+    Description: S3 bucket for website hosting
+    Value: !Ref WebsiteBucket
+  
+  CloudFrontDistribution:
+    Description: CloudFront distribution ID
+    Value: !Ref CloudFrontDistribution
+  
+  WebsiteUrl:
+    Description: CloudFront website URL
+    Value: !Sub https://${CloudFrontDistribution.DomainName}

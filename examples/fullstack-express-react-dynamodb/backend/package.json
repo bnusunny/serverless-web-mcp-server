@@ -1,0 +1,27 @@
+{
+  "name": "serverless-express-dynamodb-backend",
+  "version": "1.0.0",
+  "description": "Backend for fullstack serverless deployment with DynamoDB",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "express",
+    "serverless",
+    "aws",
+    "lambda",
+    "api-gateway",
+    "dynamodb"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@aws-sdk/client-dynamodb": "^3.350.0",
+    "@aws-sdk/lib-dynamodb": "^3.350.0",
+    "cors": "^2.8.5",
+    "express": "^4.18.2",
+    "uuid": "^9.0.0"
+  }
+}
