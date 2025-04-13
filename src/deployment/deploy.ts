@@ -64,10 +64,12 @@ import { storeDeploymentProgress } from './status.js';
  */
 function sendStatus(callback?: StatusCallback, message?: string, projectName?: string): void {
   if (message) {
+    // Only log to console if no callback is provided to avoid duplication
     if (callback) {
       callback(message);
+    } else {
+      console.log(message);
     }
-    console.log(message); // Log to console
     
     // Store progress in the deployment status file if project name is provided
     if (projectName) {
@@ -162,9 +164,9 @@ async function customizeTemplate(templatePath: string, configuration: any, statu
   // Read the template file
   let templateContent = fs.readFileSync(templatePath, 'utf8');
   
-  // Remove the AWS::ServerlessRepo::Application metadata section to avoid README.md reference errors
-  const sarMetadataRegex = /Metadata:\s+AWS::ServerlessRepo::Application:[\s\S]*?(?=\n\w|\Z)/;
-  templateContent = templateContent.replace(sarMetadataRegex, 'Metadata:');
+  // Remove the entire Metadata section to avoid issues with SAM CLI
+  const metadataRegex = /Metadata:[\s\S]*?(?=\n\w|\Z)/;
+  templateContent = templateContent.replace(metadataRegex, '');
   
   // Replace placeholders with configuration values
   templateContent = templateContent.replace(/\${ProjectName}/g, configuration.projectName);
