@@ -89,7 +89,7 @@ if (transport === "http") {
     
     // Set headers for SSE
     res.setHeader('Content-Type', 'text/event-stream');
-    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Cache-Control', 'no-cache, no-transform');
     res.setHeader('Connection', 'keep-alive');
     
     // Create a new SSE transport
@@ -110,7 +110,9 @@ if (transport === "http") {
     
     // Connect the server to the transport
     try {
-      await server.connect(transport);
+      // Start the SSE transport
+      await transport.start();
+      
       console.log(`Server connected to transport for session ${sessionId}`);
       
       // Manually send a connection/init message if the SDK doesn't
