@@ -1,6 +1,17 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { getTemplateInfo, listTemplates } from "../deployment/templates.js";
 import { getDeploymentStatus, listDeployments } from "../deployment/status.js";
+import fs from 'fs';
+import path from 'path';
+import os from 'os';
+
+// Define the directory where deployment status files will be stored
+const DEPLOYMENT_STATUS_DIR = path.join(os.tmpdir(), 'serverless-web-mcp-deployments');
+
+// Ensure the directory exists
+if (!fs.existsSync(DEPLOYMENT_STATUS_DIR)) {
+  fs.mkdirSync(DEPLOYMENT_STATUS_DIR, { recursive: true });
+}
 
 /**
  * Register all deployment resources with the MCP server
@@ -8,8 +19,8 @@ import { getDeploymentStatus, listDeployments } from "../deployment/status.js";
 export function registerDeploymentResources(server: McpServer) {
   // Register the mcp:resources resource for resource discovery
   server.resource(
-    "mcp:resources",
-    "List all available resources",
+    "resource-discovery", // Descriptive name with kebab-case
+    "mcp:resources", // URI pattern
     async () => {
       return {
         contents: [
@@ -53,8 +64,8 @@ export function registerDeploymentResources(server: McpServer) {
 
   // Register the template:list resource
   server.resource(
-    "template:list",
-    "List all available deployment templates",
+    "template-list", // Descriptive name with kebab-case
+    "template:list", // URI pattern
     async () => {
       const templates = await listTemplates();
       return {
@@ -71,8 +82,8 @@ export function registerDeploymentResources(server: McpServer) {
 
   // Register the template:{name} resource
   server.resource(
-    "template:{name}",
-    "Get information about a specific template",
+    "template-details", // Descriptive name with kebab-case
+    "template:{name}", // URI pattern
     async (params: any) => {
       const templateName = params.name;
       try {
@@ -94,14 +105,24 @@ export function registerDeploymentResources(server: McpServer) {
 
   // Register the deployment:{project-name} resource
   server.resource(
-    "deployment:{project-name}",
-    "Get information about a specific deployment",
+    "deployment-status", // Descriptive name with kebab-case
+    "deployment:{project-name}", // URI pattern
     async (params: any) => {
       const projectName = params["project-name"];
       try {
+        // First check if the deployment files exist
+        const statusFile = path.join(DEPLOYMENT_STATUS_DIR, `${projectName}.json`);
+        const progressFile = path.join(DEPLOYMENT_STATUS_DIR, `${projectName}-progress.log`);
+        
+        console.log(`Checking for deployment files: ${statusFile}, ${progressFile}`);
+        console.log(`Status file exists: ${fs.existsSync(statusFile)}`);
+        console.log(`Progress file exists: ${fs.existsSync(progressFile)}`);
+        
+        // Get deployment status
         const deployment = await getDeploymentStatus(projectName);
         
         if (deployment.status === 'not_found') {
+          console.log(`Deployment not found: ${projectName}`);
           throw new Error(`Deployment not found: ${projectName}`);
         }
         
@@ -115,6 +136,7 @@ export function registerDeploymentResources(server: McpServer) {
           ]
         };
       } catch (error) {
+        console.error(`Error retrieving deployment status for ${projectName}:`, error);
         throw new Error(`Deployment not found: ${projectName}`);
       }
     }
@@ -122,19 +144,30 @@ export function registerDeploymentResources(server: McpServer) {
 
   // Register the deployment:list resource
   server.resource(
-    "deployment:list",
-    "List all deployments",
+    "deployment-list", // Descriptive name with kebab-case
+    "deployment:list", // URI pattern
     async () => {
-      const deployments = await listDeployments();
-      return {
-        contents: [
-          {
-            text: JSON.stringify({ deployments }, null, 2),
-            uri: "deployment:list",
-            mimeType: "application/json"
-          }
-        ]
-      };
+      try {
+        console.log(`Listing deployments from ${DEPLOYMENT_STATUS_DIR}`);
+        const files = fs.readdirSync(DEPLOYMENT_STATUS_DIR);
+        console.log(`Found files: ${files.join(', ')}`);
+        
+        const deployments = await listDeployments();
+        console.log(`Found deployments: ${deployments.length}`);
+        
+        return {
+          contents: [
+            {
+              text: JSON.stringify({ deployments }, null, 2),
+              uri: "deployment:list",
+              mimeType: "application/json"
+            }
+          ]
+        };
+      } catch (error) {
+        console.error(`Error listing deployments:`, error);
+        throw new Error(`Failed to list deployments: ${error instanceof Error ? error.message : String(error)}`);
+      }
     }
   );
 }
