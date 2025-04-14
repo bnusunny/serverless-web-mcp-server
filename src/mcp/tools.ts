@@ -6,6 +6,7 @@ import { provisionDatabase } from "../deployment/database.js";
 import { getLogs } from "../aws/logs.js";
 import { getMetrics } from "../aws/metrics.js";
 import { storeDeploymentResult, storeDeploymentError } from "../deployment/status.js";
+import { createProgressTracker } from "./progress-notification.js";
 
 /**
  * Register all deployment tools with the MCP server
@@ -84,16 +85,84 @@ export function registerDeploymentTools(server: McpServer) {
           params.framework
         );
         
+        // Create a progress tracker for this deployment
+        const sendProgress = createProgressTracker(server, params.configuration.projectName);
+        
+        // Send initial progress notification
+        sendProgress({
+          content: [
+            {
+              type: "text",
+              text: `Initiating deployment of ${params.deploymentType} application '${params.configuration.projectName}'...`
+            }
+          ],
+          percentComplete: 5
+        });
+        
         // Start the deployment process in the background
         setTimeout(() => {
           deployApplication(params, (status) => {
             console.log(status);
+            
+            // Estimate progress percentage based on deployment phases
+            let percentComplete = 10; // Start at 10% after initialization
+            
+            if (status.includes("Preparing deployment files")) {
+              percentComplete = 20;
+            } else if (status.includes("Starting AWS SAM deployment")) {
+              percentComplete = 30;
+            } else if (status.includes("Building application")) {
+              percentComplete = 40;
+            } else if (status.includes("Deploying application")) {
+              percentComplete = 60;
+            } else if (status.includes("Retrieving deployment outputs")) {
+              percentComplete = 80;
+            } else if (status.includes("Uploading frontend assets")) {
+              percentComplete = 90;
+            } else if (status.includes("completed successfully")) {
+              percentComplete = 95;
+            }
+            
+            // Send progress notification
+            sendProgress({
+              content: [
+                {
+                  type: "text",
+                  text: status
+                }
+              ],
+              percentComplete
+            });
           }).then(result => {
             console.log(`Deployment completed successfully: ${JSON.stringify(result, null, 2)}`);
             storeDeploymentResult(params.configuration.projectName, result);
+            
+            // Send final progress notification
+            sendProgress({
+              content: [
+                {
+                  type: "text",
+                  text: `Deployment of ${params.deploymentType} application '${params.configuration.projectName}' completed successfully!`
+                }
+              ],
+              percentComplete: 100,
+              status: "success"
+            });
           }).catch(error => {
             console.error(`Deployment failed: ${error instanceof Error ? error.message : String(error)}`);
             storeDeploymentError(params.configuration.projectName, error);
+            
+            // Send error progress notification
+            sendProgress({
+              content: [
+                {
+                  type: "text",
+                  text: `Deployment failed: ${error instanceof Error ? error.message : String(error)}`
+                }
+              ],
+              percentComplete: 100,
+              status: "error"
+            });
           });
         }, 100);
         
@@ -102,7 +171,7 @@ export function registerDeploymentTools(server: McpServer) {
           content: [
             {
               type: "text" as const,
-              text: `Deployment of ${params.deploymentType} application '${params.configuration.projectName}' has been initiated.\n\nThe deployment will continue in the background. You can check the status using the 'deployment:${params.configuration.projectName}' resource.`
+              text: `Deployment of ${params.deploymentType} application '${params.configuration.projectName}' has been initiated.\n\nYou will receive progress updates as the deployment proceeds. You can also check the status using the 'deployment:${params.configuration.projectName}' resource.`
             }
           ]
         };
@@ -138,8 +207,58 @@ export function registerDeploymentTools(server: McpServer) {
     },
     async (params) => {
       try {
+        // Create a progress tracker for this domain configuration
+        const sendProgress = createProgressTracker(server, params.projectName);
+        
+        // Send initial progress notification
+        sendProgress({
+          content: [
+            {
+              type: "text",
+              text: `Configuring domain ${params.domainName} for project ${params.projectName}...`
+            }
+          ],
+          percentComplete: 10
+        });
+        
         const result = await configureDomain(params, (status) => {
           console.log(status);
+          
+          // Estimate progress percentage based on domain configuration phases
+          let percentComplete = 20; // Start at 20% after initialization
+          
+          if (status.includes("Creating certificate")) {
+            percentComplete = 30;
+          } else if (status.includes("Waiting for certificate validation")) {
+            percentComplete = 50;
+          } else if (status.includes("Configuring CloudFront")) {
+            percentComplete = 70;
+          } else if (status.includes("Creating DNS records")) {
+            percentComplete = 90;
+          }
+          
+          // Send progress notification
+          sendProgress({
+            content: [
+              {
+                type: "text",
+                text: status
+              }
+            ],
+            percentComplete
+          });
+        });
+        
+        // Send final progress notification
+        sendProgress({
+          content: [
+            {
+              type: "text",
+              text: `Domain ${params.domainName} successfully configured for project ${params.projectName}`
+            }
+          ],
+          percentComplete: 100,
+          status: "success"
         });
         
         return {
@@ -151,6 +270,21 @@ export function registerDeploymentTools(server: McpServer) {
           ]
         };
       } catch (error) {
+        // Create a progress tracker if it doesn't exist yet
+        const sendProgress = createProgressTracker(server, params.projectName);
+        
+        // Send error progress notification
+        sendProgress({
+          content: [
+            {
+              type: "text",
+              text: `Domain configuration failed: ${error instanceof Error ? error.message : String(error)}`
+            }
+          ],
+          percentComplete: 100,
+          status: "error"
+        });
+        
         return {
           content: [
             {
