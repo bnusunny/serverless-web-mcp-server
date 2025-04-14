@@ -71,7 +71,7 @@ export function registerDeploymentTools(server: McpServer) {
           .describe("Custom domain configuration")
       }).describe("Deployment configuration parameters")
     },
-    async (params) => {
+    async (params, extra) => {
       try {
         console.log(`Starting deployment of ${params.deploymentType} application: ${params.configuration.projectName}...`);
         
@@ -83,8 +83,13 @@ export function registerDeploymentTools(server: McpServer) {
           params.framework
         );
         
+        // Check if the client supports progress notifications
+        const { clientSupportsProgress, getProgressToken, createProgressTracker } = await import("./progress-notification.js");
+        const supportsProgress = clientSupportsProgress(extra);
+        const progressToken = getProgressToken(extra);
+        
         // Create a progress tracker for this deployment
-        const sendProgress = createProgressTracker(server, params.configuration.projectName);
+        const sendProgress = createProgressTracker(server, params.configuration.projectName, progressToken);
         
         // Send initial progress notification
         sendProgress({
@@ -97,80 +102,153 @@ export function registerDeploymentTools(server: McpServer) {
           percentComplete: 5
         });
         
-        // Start the deployment process
-        deployApplication(params, (status) => {
-          console.log(status);
-          
-          // Estimate progress percentage based on deployment phases
-          let percentComplete = 10; // Start at 10% after initialization
-          
-          if (status.includes("Preparing deployment files")) {
-            percentComplete = 20;
-          } else if (status.includes("Starting AWS SAM deployment")) {
-            percentComplete = 30;
-          } else if (status.includes("Building application")) {
-            percentComplete = 40;
-          } else if (status.includes("Deploying application")) {
-            percentComplete = 60;
-          } else if (status.includes("Retrieving deployment outputs")) {
-            percentComplete = 80;
-          } else if (status.includes("Uploading frontend assets")) {
-            percentComplete = 90;
-          } else if (status.includes("completed successfully")) {
-            percentComplete = 95;
-          }
-          
-          // Send progress notification
-          sendProgress({
-            content: [
-              {
-                type: "text",
-                text: status
-              }
-            ],
-            percentComplete
-          });
-        }).then(result => {
-          console.log(`Deployment completed successfully: ${JSON.stringify(result, null, 2)}`);
-          storeDeploymentResult(params.configuration.projectName, result);
-          
-          // Send final progress notification
-          sendProgress({
-            content: [
-              {
-                type: "text",
-                text: `Deployment of ${params.deploymentType} application '${params.configuration.projectName}' completed successfully!`
-              }
-            ],
-            percentComplete: 100,
-            status: "success"
-          });
-        }).catch(error => {
-          console.error(`Deployment failed: ${error instanceof Error ? error.message : String(error)}`);
-          storeDeploymentError(params.configuration.projectName, error);
-          
-          // Send error progress notification
-          sendProgress({
-            content: [
-              {
-                type: "text",
-                text: `Deployment failed: ${error instanceof Error ? error.message : String(error)}`
-              }
-            ],
-            percentComplete: 100,
-            status: "error"
-          });
-        });
-        
-        // Return immediate response with information about progress notifications
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: `Deployment of ${params.deploymentType} application '${params.configuration.projectName}' has been initiated.\n\nYou will receive real-time progress updates through MCP progress notifications.`
+        // Handle deployment based on client capabilities
+        if (supportsProgress) {
+          // For clients that support progress notifications, run deployment directly
+          deployApplication(params, (status) => {
+            console.log(status);
+            
+            // Estimate progress percentage based on deployment phases
+            let percentComplete = 10; // Start at 10% after initialization
+            
+            if (status.includes("Preparing deployment files")) {
+              percentComplete = 20;
+            } else if (status.includes("Starting AWS SAM deployment")) {
+              percentComplete = 30;
+            } else if (status.includes("Building application")) {
+              percentComplete = 40;
+            } else if (status.includes("Deploying application")) {
+              percentComplete = 60;
+            } else if (status.includes("Retrieving deployment outputs")) {
+              percentComplete = 80;
+            } else if (status.includes("Uploading frontend assets")) {
+              percentComplete = 90;
+            } else if (status.includes("completed successfully")) {
+              percentComplete = 95;
             }
-          ]
-        };
+            
+            // Send progress notification
+            sendProgress({
+              content: [
+                {
+                  type: "text",
+                  text: status
+                }
+              ],
+              percentComplete
+            });
+          }).then(result => {
+            console.log(`Deployment completed successfully: ${JSON.stringify(result, null, 2)}`);
+            storeDeploymentResult(params.configuration.projectName, result);
+            
+            // Send final progress notification
+            sendProgress({
+              content: [
+                {
+                  type: "text",
+                  text: `Deployment of ${params.deploymentType} application '${params.configuration.projectName}' completed successfully!`
+                }
+              ],
+              percentComplete: 100,
+              status: "success"
+            });
+          }).catch(error => {
+            console.error(`Deployment failed: ${error instanceof Error ? error.message : String(error)}`);
+            storeDeploymentError(params.configuration.projectName, error);
+            
+            // Send error progress notification
+            sendProgress({
+              content: [
+                {
+                  type: "text",
+                  text: `Deployment failed: ${error instanceof Error ? error.message : String(error)}`
+                }
+              ],
+              percentComplete: 100,
+              status: "error"
+            });
+          });
+          
+          // Return immediate response with information about progress notifications
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: `Deployment of ${params.deploymentType} application '${params.configuration.projectName}' has been initiated.\n\nYou will receive real-time progress updates through MCP progress notifications.`
+              }
+            ]
+          };
+        } else {
+          // For clients that don't support progress notifications, use the original async approach
+          // Start the deployment process in the background
+          setTimeout(() => {
+            deployApplication(params, (status) => {
+              console.log(status);
+              
+              // Still track progress for logging purposes
+              let percentComplete = 10;
+              if (status.includes("Preparing deployment files")) {
+                percentComplete = 20;
+              } else if (status.includes("Starting AWS SAM deployment")) {
+                percentComplete = 30;
+              } else if (status.includes("Building application")) {
+                percentComplete = 40;
+              } else if (status.includes("Deploying application")) {
+                percentComplete = 60;
+              } else if (status.includes("Retrieving deployment outputs")) {
+                percentComplete = 80;
+              } else if (status.includes("Uploading frontend assets")) {
+                percentComplete = 90;
+              } else if (status.includes("completed successfully")) {
+                percentComplete = 95;
+              }
+              
+              // Send progress for logging purposes
+              sendProgress({
+                content: [{ type: "text", text: status }],
+                percentComplete
+              });
+            }).then(result => {
+              console.log(`Deployment completed successfully: ${JSON.stringify(result, null, 2)}`);
+              storeDeploymentResult(params.configuration.projectName, result);
+              
+              sendProgress({
+                content: [
+                  {
+                    type: "text",
+                    text: `Deployment of ${params.deploymentType} application '${params.configuration.projectName}' completed successfully!`
+                  }
+                ],
+                percentComplete: 100,
+                status: "success"
+              });
+            }).catch(error => {
+              console.error(`Deployment failed: ${error instanceof Error ? error.message : String(error)}`);
+              storeDeploymentError(params.configuration.projectName, error);
+              
+              sendProgress({
+                content: [
+                  {
+                    type: "text",
+                    text: `Deployment failed: ${error instanceof Error ? error.message : String(error)}`
+                  }
+                ],
+                percentComplete: 100,
+                status: "error"
+              });
+            });
+          }, 100);
+          
+          // Return immediate response with information about resource polling
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: `Deployment of ${params.deploymentType} application '${params.configuration.projectName}' has been initiated.\n\nThe deployment will continue in the background. You can check the status using the 'deployment:${params.configuration.projectName}' resource.`
+              }
+            ]
+          };
+        }
       } catch (error) {
         return {
           content: [
@@ -201,10 +279,15 @@ export function registerDeploymentTools(server: McpServer) {
       createRoute53Records: z.boolean().default(true)
         .describe("Whether to create Route 53 records")
     },
-    async (params) => {
+    async (params, extra) => {
       try {
+        // Check if the client supports progress notifications
+        const { clientSupportsProgress, getProgressToken, createProgressTracker } = await import("./progress-notification.js");
+        const supportsProgress = clientSupportsProgress(extra);
+        const progressToken = getProgressToken(extra);
+        
         // Create a progress tracker for this domain configuration
-        const sendProgress = createProgressTracker(server, params.projectName);
+        const sendProgress = createProgressTracker(server, params.projectName, progressToken);
         
         // Send initial progress notification
         sendProgress({
@@ -267,6 +350,7 @@ export function registerDeploymentTools(server: McpServer) {
         };
       } catch (error) {
         // Create a progress tracker if it doesn't exist yet
+        const { createProgressTracker } = await import("./progress-notification.js");
         const sendProgress = createProgressTracker(server, params.projectName);
         
         // Send error progress notification
