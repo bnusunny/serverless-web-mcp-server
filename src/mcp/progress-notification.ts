@@ -1,11 +1,9 @@
 /**
- * Implementation of progress notifications for MCP server
+ * Implementation of direct progress notifications for MCP server
  * 
  * This module provides a way to send progress notifications to MCP clients
- * during long-running operations like deployments.
+ * during long-running operations like deployments, following the MCP protocol.
  */
-
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
 /**
  * Progress notification content
@@ -26,7 +24,7 @@ export interface ProgressContent {
  * @param projectName The name of the project being deployed
  * @returns A function to send progress updates
  */
-export function createProgressTracker(server: McpServer, projectName: string) {
+export function createProgressTracker(server: any, projectName: string) {
   // Create a unique ID for this deployment
   const deploymentId = `${projectName}-${Date.now()}`;
   
@@ -34,15 +32,20 @@ export function createProgressTracker(server: McpServer, projectName: string) {
   return function sendProgress(progress: ProgressContent): void {
     try {
       // Use the server's underlying notification mechanism
-      server.server.sendLoggingMessage({
-        level: progress.status === "error" ? "error" : "info",
-        message: JSON.stringify({
-          type: "deployment-progress",
-          deploymentId,
-          projectName,
-          progress
-        })
-      }).catch(err => {
+      server.server.notification({
+        method: "notifications/progress",
+        params: {
+          progressToken: deploymentId,
+          progress: progress.percentComplete,
+          total: 100,
+          message: JSON.stringify({
+            type: "deployment-progress",
+            projectName,
+            content: progress.content,
+            status: progress.status || "info"
+          })
+        }
+      }).catch((err: Error) => {
         console.error(`Failed to send progress notification: ${err}`);
       });
     } catch (error) {
