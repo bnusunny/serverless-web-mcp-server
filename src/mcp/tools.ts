@@ -1,4 +1,4 @@
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { McpServer, ProgressNotification } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { deployApplication } from "../deployment/deploy.js";
 import { configureDomain } from "../deployment/domain.js";
@@ -70,7 +70,7 @@ export function registerDeploymentTools(server: McpServer) {
           .describe("Custom domain configuration")
       }).describe("Deployment configuration parameters")
     },
-    async (params) => {
+    async (params, progress) => {
       try {
         // For Roo Code compatibility, return immediately with a success message
         // and continue the deployment in the background
@@ -84,16 +84,81 @@ export function registerDeploymentTools(server: McpServer) {
           params.framework
         );
         
+        // Send initial progress notification
+        progress.update({
+          content: [
+            {
+              type: "text",
+              text: `Initiating deployment of ${params.deploymentType} application '${params.configuration.projectName}'...`
+            }
+          ],
+          percentComplete: 5
+        });
+        
         // Start the deployment process in the background
         setTimeout(() => {
           deployApplication(params, (status) => {
             console.log(status);
+            
+            // Send progress notifications for each status update
+            // Estimate progress percentage based on deployment phases
+            let percentComplete = 10; // Start at 10% after initialization
+            
+            if (status.includes("Preparing deployment files")) {
+              percentComplete = 20;
+            } else if (status.includes("Starting AWS SAM deployment")) {
+              percentComplete = 30;
+            } else if (status.includes("Building application")) {
+              percentComplete = 40;
+            } else if (status.includes("Deploying application")) {
+              percentComplete = 60;
+            } else if (status.includes("Retrieving deployment outputs")) {
+              percentComplete = 80;
+            } else if (status.includes("Uploading frontend assets")) {
+              percentComplete = 90;
+            } else if (status.includes("completed successfully")) {
+              percentComplete = 95;
+            }
+            
+            // Send progress notification
+            progress.update({
+              content: [
+                {
+                  type: "text",
+                  text: status
+                }
+              ],
+              percentComplete
+            });
           }).then(result => {
             console.log(`Deployment completed successfully: ${JSON.stringify(result, null, 2)}`);
             storeDeploymentResult(params.configuration.projectName, result);
+            
+            // Send final progress notification
+            progress.update({
+              content: [
+                {
+                  type: "text",
+                  text: `Deployment of ${params.deploymentType} application '${params.configuration.projectName}' completed successfully!`
+                }
+              ],
+              percentComplete: 100
+            });
           }).catch(error => {
             console.error(`Deployment failed: ${error instanceof Error ? error.message : String(error)}`);
             storeDeploymentError(params.configuration.projectName, error);
+            
+            // Send error progress notification
+            progress.update({
+              content: [
+                {
+                  type: "text",
+                  text: `Deployment failed: ${error instanceof Error ? error.message : String(error)}`
+                }
+              ],
+              percentComplete: 100,
+              status: "error"
+            });
           });
         }, 100);
         
@@ -102,7 +167,7 @@ export function registerDeploymentTools(server: McpServer) {
           content: [
             {
               type: "text" as const,
-              text: `Deployment of ${params.deploymentType} application '${params.configuration.projectName}' has been initiated.\n\nThe deployment will continue in the background. You can check the status using the 'deployment:${params.configuration.projectName}' resource.`
+              text: `Deployment of ${params.deploymentType} application '${params.configuration.projectName}' has been initiated.\n\nYou will receive progress updates as the deployment proceeds.`
             }
           ]
         };
@@ -136,10 +201,56 @@ export function registerDeploymentTools(server: McpServer) {
       createRoute53Records: z.boolean().default(true)
         .describe("Whether to create Route 53 records")
     },
-    async (params) => {
+    async (params, progress) => {
       try {
+        // Send initial progress notification
+        progress.update({
+          content: [
+            {
+              type: "text",
+              text: `Configuring domain ${params.domainName} for project ${params.projectName}...`
+            }
+          ],
+          percentComplete: 10
+        });
+        
         const result = await configureDomain(params, (status) => {
           console.log(status);
+          
+          // Estimate progress percentage based on domain configuration phases
+          let percentComplete = 20; // Start at 20% after initialization
+          
+          if (status.includes("Creating certificate")) {
+            percentComplete = 30;
+          } else if (status.includes("Waiting for certificate validation")) {
+            percentComplete = 50;
+          } else if (status.includes("Configuring CloudFront")) {
+            percentComplete = 70;
+          } else if (status.includes("Creating DNS records")) {
+            percentComplete = 90;
+          }
+          
+          // Send progress notification
+          progress.update({
+            content: [
+              {
+                type: "text",
+                text: status
+              }
+            ],
+            percentComplete
+          });
+        });
+        
+        // Send final progress notification
+        progress.update({
+          content: [
+            {
+              type: "text",
+              text: `Domain ${params.domainName} successfully configured for project ${params.projectName}`
+            }
+          ],
+          percentComplete: 100
         });
         
         return {
@@ -151,6 +262,18 @@ export function registerDeploymentTools(server: McpServer) {
           ]
         };
       } catch (error) {
+        // Send error progress notification
+        progress.update({
+          content: [
+            {
+              type: "text",
+              text: `Domain configuration failed: ${error instanceof Error ? error.message : String(error)}`
+            }
+          ],
+          percentComplete: 100,
+          status: "error"
+        });
+        
         return {
           content: [
             {
@@ -194,10 +317,56 @@ export function registerDeploymentTools(server: McpServer) {
           .describe("Database capacity units (for Aurora Serverless)")
       }).describe("Database configuration parameters")
     },
-    async (params) => {
+    async (params, progress) => {
       try {
+        // Send initial progress notification
+        progress.update({
+          content: [
+            {
+              type: "text",
+              text: `Provisioning ${params.databaseType} database for project ${params.projectName}...`
+            }
+          ],
+          percentComplete: 10
+        });
+        
         const result = await provisionDatabase(params, (status) => {
           console.log(status);
+          
+          // Estimate progress percentage based on database provisioning phases
+          let percentComplete = 20; // Start at 20% after initialization
+          
+          if (status.includes("Creating CloudFormation stack")) {
+            percentComplete = 30;
+          } else if (status.includes("Waiting for resources")) {
+            percentComplete = 50;
+          } else if (status.includes("Configuring database")) {
+            percentComplete = 70;
+          } else if (status.includes("Setting up permissions")) {
+            percentComplete = 90;
+          }
+          
+          // Send progress notification
+          progress.update({
+            content: [
+              {
+                type: "text",
+                text: status
+              }
+            ],
+            percentComplete
+          });
+        });
+        
+        // Send final progress notification
+        progress.update({
+          content: [
+            {
+              type: "text",
+              text: `${params.databaseType} database successfully provisioned for project ${params.projectName}`
+            }
+          ],
+          percentComplete: 100
         });
         
         return {
@@ -209,6 +378,18 @@ export function registerDeploymentTools(server: McpServer) {
           ]
         };
       } catch (error) {
+        // Send error progress notification
+        progress.update({
+          content: [
+            {
+              type: "text",
+              text: `Database provisioning failed: ${error instanceof Error ? error.message : String(error)}`
+            }
+          ],
+          percentComplete: 100,
+          status: "error"
+        });
+        
         return {
           content: [
             {
@@ -241,10 +422,54 @@ export function registerDeploymentTools(server: McpServer) {
       limit: z.number().default(100)
         .describe("Maximum number of log entries to retrieve")
     },
-    async (params) => {
+    async (params, progress) => {
       try {
+        // Send initial progress notification
+        progress.update({
+          content: [
+            {
+              type: "text",
+              text: `Retrieving ${params.resourceType} logs for project ${params.projectName}...`
+            }
+          ],
+          percentComplete: 10
+        });
+        
+        // For log retrieval, we'll send progress updates at key points
+        progress.update({
+          content: [
+            {
+              type: "text",
+              text: `Identifying log groups for ${params.resourceType}...`
+            }
+          ],
+          percentComplete: 30
+        });
+        
         const logs = await getLogs(params, (status) => {
           console.log(status);
+          
+          // Send progress notification
+          progress.update({
+            content: [
+              {
+                type: "text",
+                text: status
+              }
+            ],
+            percentComplete: 60
+          });
+        });
+        
+        // Send final progress notification
+        progress.update({
+          content: [
+            {
+              type: "text",
+              text: `Successfully retrieved logs for ${params.resourceType} in project ${params.projectName}`
+            }
+          ],
+          percentComplete: 100
         });
         
         return {
@@ -256,6 +481,18 @@ export function registerDeploymentTools(server: McpServer) {
           ]
         };
       } catch (error) {
+        // Send error progress notification
+        progress.update({
+          content: [
+            {
+              type: "text",
+              text: `Failed to retrieve logs: ${error instanceof Error ? error.message : String(error)}`
+            }
+          ],
+          percentComplete: 100,
+          status: "error"
+        });
+        
         return {
           content: [
             {
@@ -291,10 +528,64 @@ export function registerDeploymentTools(server: McpServer) {
       period: z.number().default(60)
         .describe("Period in seconds")
     },
-    async (params) => {
+    async (params, progress) => {
       try {
+        // Send initial progress notification
+        progress.update({
+          content: [
+            {
+              type: "text",
+              text: `Retrieving ${params.metricName} metrics for ${params.resourceType} in project ${params.projectName}...`
+            }
+          ],
+          percentComplete: 10
+        });
+        
+        // For metrics retrieval, we'll send progress updates at key points
+        progress.update({
+          content: [
+            {
+              type: "text",
+              text: `Identifying resources for ${params.resourceType}...`
+            }
+          ],
+          percentComplete: 30
+        });
+        
+        progress.update({
+          content: [
+            {
+              type: "text",
+              text: `Querying CloudWatch metrics...`
+            }
+          ],
+          percentComplete: 60
+        });
+        
         const metrics = await getMetrics(params, (status) => {
           console.log(status);
+          
+          // Send progress notification
+          progress.update({
+            content: [
+              {
+                type: "text",
+                text: status
+              }
+            ],
+            percentComplete: 80
+          });
+        });
+        
+        // Send final progress notification
+        progress.update({
+          content: [
+            {
+              type: "text",
+              text: `Successfully retrieved metrics for ${params.resourceType} in project ${params.projectName}`
+            }
+          ],
+          percentComplete: 100
         });
         
         return {
@@ -306,6 +597,18 @@ export function registerDeploymentTools(server: McpServer) {
           ]
         };
       } catch (error) {
+        // Send error progress notification
+        progress.update({
+          content: [
+            {
+              type: "text",
+              text: `Failed to retrieve metrics: ${error instanceof Error ? error.message : String(error)}`
+            }
+          ],
+          percentComplete: 100,
+          status: "error"
+        });
+        
         return {
           content: [
             {
