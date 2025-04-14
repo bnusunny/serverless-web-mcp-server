@@ -118,7 +118,7 @@ export function registerDeploymentResources(server: McpServer) {
         console.log(`Status file exists: ${fs.existsSync(statusFile)}`);
         console.log(`Progress file exists: ${fs.existsSync(progressFile)}`);
         
-        // Get deployment status
+        // Get deployment status - this now returns immediately with current status
         const deployment = await getDeploymentStatus(projectName);
         
         if (deployment.status === 'not_found') {
@@ -126,10 +126,25 @@ export function registerDeploymentResources(server: McpServer) {
           throw new Error(`Deployment not found: ${projectName}`);
         }
         
+        // Check if this is a CloudFront deployment (which takes a long time)
+        let hasCloudfrontDistribution = false;
+        if (deployment.resources && Array.isArray(deployment.resources)) {
+          hasCloudfrontDistribution = deployment.resources.some((r: any) => 
+            r.resourceType === 'AWS::CloudFront::Distribution'
+          );
+        }
+        
+        // Return the deployment status immediately
         return {
           contents: [
             {
-              text: JSON.stringify({ deployment }, null, 2),
+              text: JSON.stringify({ 
+                deployment,
+                // Add a note for long-running deployments
+                note: deployment.status === 'in_progress' && hasCloudfrontDistribution
+                  ? "CloudFront distributions typically take 15-20 minutes to deploy. You can continue to poll this resource for updates."
+                  : undefined
+              }, null, 2),
               uri: `deployment:${projectName}`,
               mimeType: "application/json"
             }
