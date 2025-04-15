@@ -468,7 +468,7 @@ async function generateSamTemplate(
   
   // Render template with configuration
   const templateData = {
-    description: `${deploymentType.charAt(0).toUpperCase() + deploymentType.slice(1)} application: ${configuration.projectName}`,
+    description: `${deploymentType.charAt(0).toUpperCase() + deploymentType.slice(1)} application ${configuration.projectName}`,
     ...configuration
   };
   
@@ -476,6 +476,23 @@ async function generateSamTemplate(
   
   // Write template to deployment directory
   await writeFileAsync(path.join(deploymentDir, 'template.yaml'), renderedTemplate);
+  
+  // Create a basic samconfig.toml file
+  const samConfigContent = `version = 0.1
+[default]
+[default.deploy]
+[default.deploy.parameters]
+stack_name = "${configuration.projectName}"
+s3_bucket = "aws-sam-cli-managed-default-samclisourcebucket-${Math.random().toString(36).substring(2, 10)}"
+s3_prefix = "${configuration.projectName}"
+region = "${configuration.region || 'us-east-1'}"
+confirm_changeset = false
+capabilities = "CAPABILITY_IAM"
+`;
+  
+  await writeFileAsync(path.join(deploymentDir, 'samconfig.toml'), samConfigContent);
+  
+  logger.info(`Generated SAM template and config for ${configuration.projectName}`);
 }
 
 /**
