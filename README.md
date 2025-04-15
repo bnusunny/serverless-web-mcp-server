@@ -19,8 +19,7 @@ This server implements the Model Context Protocol with the following features:
 
 Provides contextual information about:
 - Available deployment templates (`template:list`, `template:{name}`)
-- Existing deployments and their status (`deployment:{project-name}`)
-- AWS resource configurations (`resources:{project-name}`, `resources:list`)
+- Existing deployments and their status (`deployment:list`, `deployment:{project-name}`)
 - Resource discovery (`mcp:resources`) - Lists all available resources
 
 ### Tools
@@ -227,9 +226,11 @@ This will return a list of all available resources, their descriptions, patterns
 /
 ├── src/
 │   ├── mcp/              # MCP protocol implementation
-│   │   ├── tools.ts      # Tool implementations
-│   │   ├── resources.ts  # Resource implementations
-│   │   └── error-handler.ts # Error handling with suggestions
+│   │   ├── tools/        # Tool implementations
+│   │   │   └── index.ts  # Tool registration
+│   │   ├── resources/    # Resource implementations
+│   │   │   └── index.ts  # Resource registration
+│   │   └── server.ts     # MCP server setup
 │   ├── deployment/       # Deployment service
 │   ├── aws/              # AWS integration
 │   └── index.ts          # Main server entry point

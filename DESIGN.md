@@ -52,7 +52,6 @@ Maintains state information about projects, deployments, and resources to provid
 - **Resource Types**:
   - Deployment resources (status, endpoints, configurations)
   - Template resources (available templates and their metadata)
-  - AWS resources (inventory of provisioned resources)
 
 ### 4. AWS Integration Layer
 
@@ -71,16 +70,16 @@ Handles interaction with AWS services and resources through AWS SAM CLI and dire
 The server exposes the following resource types through the MCP protocol:
 
 - **deployment**: Information about deployed applications
-  - URI format: `deployment:{project-name}`
+  - URI format: `deployment:{project-name}` or `deployment:list`
   - Example: `deployment:my-api`
 
 - **template**: Information about available deployment templates
-  - URI format: `template:{template-name}` or `template:list`
-  - Example: `template:express-backend`
+  - URI format: `template:{name}` or `template:list`
+  - Example: `template:backend`
 
-- **resources**: Information about AWS resources for deployed applications
-  - URI format: `resources:{project-name}` or `resources:list`
-  - Example: `resources:my-api`
+- **mcp:resources**: Resource discovery
+  - URI format: `mcp:resources`
+  - Lists all available resources and their patterns
 
 ### Tools
 
@@ -91,6 +90,33 @@ The server exposes the following tools through the MCP protocol:
 - **provision-database**: Create and configure database resources
 - **get-logs**: Retrieve application logs
 - **get-metrics**: Fetch performance metrics
+
+## Resource Implementation
+
+The server implements resources using a modular approach with a consistent interface:
+
+```typescript
+interface McpResource {
+  name: string;
+  uri: string;
+  description: string;
+  handler: (uri: URL, variables?: any) => Promise<any>;
+}
+```
+
+Each resource is implemented as a separate module that exports a default object conforming to this interface. Resources are registered with the MCP server using a simple loop:
+
+```typescript
+resources.forEach((resource: McpResource) => {
+  server.resource(resource.name, resource.uri, resource.handler);
+});
+```
+
+This approach provides several benefits:
+- Consistent resource handling
+- Easy addition of new resources
+- Clear separation of concerns
+- Improved testability
 
 ## Unified Deployment Approach
 
