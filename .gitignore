@@ -27,6 +27,7 @@ deployments/
 domains/
 databases/
 .aws-sam/
+.deployments
 
 # Logs
 logs/
