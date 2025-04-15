@@ -17,6 +17,7 @@ import {
   DeploySamResult
 } from '../types/index.js';
 import * as os from 'os';
+import { copyDirectory } from '../utils/fs-utils.js';
 
 const execAsync = promisify(exec);
 const mkdirAsync = promisify(fs.mkdir);
@@ -190,16 +191,19 @@ async function copySourceCode(
     await mkdirAsync(path.join(deploymentDir, 'src', 'backend'), { recursive: true });
     await mkdirAsync(path.join(deploymentDir, 'src', 'frontend'), { recursive: true });
     
-    // Copy backend code
+    // Copy backend code (cross-platform)
     const backendSourcePath = path.join(sourcePath, 'backend');
-    await execAsync(`cp -r ${backendSourcePath}/* ${path.join(deploymentDir, 'src', 'backend')}`);
+    const backendDestPath = path.join(deploymentDir, 'src', 'backend');
+    await copyDirectory(backendSourcePath, backendDestPath);
     
-    // Copy frontend code
+    // Copy frontend code (cross-platform)
     const frontendSourcePath = path.join(sourcePath, 'frontend');
-    await execAsync(`cp -r ${frontendSourcePath}/* ${path.join(deploymentDir, 'src', 'frontend')}`);
+    const frontendDestPath = path.join(deploymentDir, 'src', 'frontend');
+    await copyDirectory(frontendSourcePath, frontendDestPath);
   } else {
-    // Copy source code
-    await execAsync(`cp -r ${sourcePath}/* ${path.join(deploymentDir, 'src')}`);
+    // Copy source code (cross-platform)
+    const destPath = path.join(deploymentDir, 'src');
+    await copyDirectory(sourcePath, destPath);
   }
 }
 
@@ -267,88 +271,160 @@ function startBackgroundDeployment(
   deploymentDir: string, 
   configuration: DeploymentConfiguration
 ): void {
-  // Run deployment in background
-  const deploymentProcess = spawn('bash', ['-c', `
-    cd "${deploymentDir}" && 
-    echo "Building SAM application..." && 
-    sam build && 
-    echo "Deploying SAM application..." && 
-    sam deploy --stack-name ${configuration.projectName} --capabilities CAPABILITY_IAM --no-confirm-changeset --no-fail-on-empty-changeset && 
-    echo "Getting stack outputs..." && 
-    aws cloudformation describe-stacks --stack-name ${configuration.projectName} --query "Stacks[0].Outputs" --output json > outputs.json && 
-    echo "Deployment completed successfully."
-  `], {
+  // Create a Node.js script for the deployment process
+  const deployScriptPath = path.join(deploymentDir, 'deploy.js');
+  const statusCheckScriptPath = path.join(deploymentDir, 'status-check.js');
+  
+  // Create deployment script
+  const deployScript = `
+    const { execSync } = require('child_process');
+    const fs = require('fs');
+    const path = require('path');
+
+    try {
+      console.log('Building SAM application...');
+      execSync('sam build', { cwd: '${deploymentDir.replace(/\\/g, '\\\\')}', stdio: 'inherit' });
+      
+      console.log('Deploying SAM application...');
+      execSync('sam deploy --stack-name ${configuration.projectName} --capabilities CAPABILITY_IAM --no-confirm-changeset --no-fail-on-empty-changeset', 
+        { cwd: '${deploymentDir.replace(/\\/g, '\\\\')}', stdio: 'inherit' });
+      
+      console.log('Getting stack outputs...');
+      const outputs = execSync('aws cloudformation describe-stacks --stack-name ${configuration.projectName} --query "Stacks[0].Outputs" --output json', 
+        { encoding: 'utf8' });
+      
+      fs.writeFileSync(path.join('${deploymentDir.replace(/\\/g, '\\\\')}', 'outputs.json'), outputs);
+      console.log('Deployment completed successfully.');
+    } catch (error) {
+      console.error('Deployment failed:', error);
+      process.exit(1);
+    }
+  `;
+  
+  // Create status check script
+  const statusCheckScript = `
+    const fs = require('fs');
+    const path = require('path');
+    const { execSync } = require('child_process');
+    
+    const DEPLOYMENT_STATUS_DIR = '${DEPLOYMENT_STATUS_DIR.replace(/\\/g, '\\\\')}';
+    const projectName = '${configuration.projectName}';
+    const deploymentDir = '${deploymentDir.replace(/\\/g, '\\\\')}';
+    
+    function updateStatus(status) {
+      const statusFilePath = path.join(DEPLOYMENT_STATUS_DIR, \`\${projectName}.json\`);
+      fs.writeFileSync(statusFilePath, JSON.stringify({
+        ...status,
+        lastUpdated: new Date().toISOString()
+      }, null, 2));
+    }
+    
+    async function checkStatus() {
+      try {
+        // Check if outputs.json exists (deployment completed)
+        if (fs.existsSync(path.join(deploymentDir, 'outputs.json'))) {
+          const outputs = JSON.parse(fs.readFileSync(path.join(deploymentDir, 'outputs.json'), 'utf8'));
+          updateStatus({
+            status: 'success',
+            message: 'Deployment completed successfully',
+            outputs,
+            projectName
+          });
+          return true; // Exit the loop
+        }
+        
+        // Check CloudFormation stack status
+        try {
+          const stackStatusCmd = 'aws cloudformation describe-stacks --stack-name ' + 
+            projectName + ' --query "Stacks[0].StackStatus" --output text';
+          const stackStatus = execSync(stackStatusCmd, { encoding: 'utf8' }).trim();
+          
+          if (stackStatus === 'CREATE_COMPLETE' || stackStatus === 'UPDATE_COMPLETE') {
+            // Get outputs
+            const outputsCmd = 'aws cloudformation describe-stacks --stack-name ' + 
+              projectName + ' --query "Stacks[0].Outputs" --output json';
+            const outputs = JSON.parse(execSync(outputsCmd, { encoding: 'utf8' }));
+            
+            updateStatus({
+              status: 'success',
+              message: 'Deployment completed successfully',
+              outputs,
+              projectName
+            });
+            return true; // Exit the loop
+          } else if (stackStatus === 'CREATE_FAILED' || stackStatus === 'ROLLBACK_COMPLETE' || 
+                    stackStatus === 'UPDATE_FAILED') {
+            updateStatus({
+              status: 'error',
+              message: 'Deployment failed with status: ' + stackStatus,
+              projectName
+            });
+            return true; // Exit the loop
+          } else {
+            updateStatus({
+              status: 'in_progress',
+              message: 'Deployment in progress with status: ' + stackStatus,
+              projectName
+            });
+          }
+        } catch (error) {
+          // Stack might not exist yet
+          updateStatus({
+            status: 'in_progress',
+            message: 'Preparing deployment...',
+            projectName
+          });
+        }
+        
+        return false; // Continue the loop
+      } catch (error) {
+        console.error('Error checking status:', error);
+        return false; // Continue the loop
+      }
+    }
+    
+    async function main() {
+      while (true) {
+        const done = await checkStatus();
+        if (done) break;
+        
+        // Sleep for 10 seconds
+        await new Promise(resolve => setTimeout(resolve, 10000));
+      }
+    }
+    
+    main().catch(console.error);
+  `;
+  
+  // Write scripts to files
+  fs.writeFileSync(deployScriptPath, deployScript);
+  fs.writeFileSync(statusCheckScriptPath, statusCheckScript);
+  
+  // Make scripts executable on Unix-like systems
+  if (os.platform() !== 'win32') {
+    try {
+      fs.chmodSync(deployScriptPath, '755');
+      fs.chmodSync(statusCheckScriptPath, '755');
+    } catch (error) {
+      console.error('Error making scripts executable:', error);
+    }
+  }
+  
+  // Start deployment process
+  const deployProcess = spawn('node', [deployScriptPath], {
     detached: true,
-    stdio: 'ignore'
+    stdio: 'ignore',
+    windowsHide: true
   });
   
   // Unref the process to allow the parent process to exit
-  deploymentProcess.unref();
+  deployProcess.unref();
   
-  // Set up a process to check deployment status periodically
-  const statusCheckProcess = spawn('bash', ['-c', `
-    cd "${deploymentDir}" && 
-    while true; do
-      if [ -f "outputs.json" ]; then
-        # Deployment completed successfully
-        OUTPUTS=$(cat outputs.json)
-        echo "{
-          \\"status\\": \\"success\\",
-          \\"message\\": \\"Deployment completed successfully\\",
-          \\"outputs\\": $OUTPUTS,
-          \\"projectName\\": \\"${configuration.projectName}\\",
-          \\"lastUpdated\\": \\"\$(date -u +"%Y-%m-%dT%H:%M:%SZ")\\"
-        }" > "${DEPLOYMENT_STATUS_DIR}/${configuration.projectName}.json"
-        exit 0
-      fi
-      
-      # Check if the deployment is still running
-      STACK_STATUS=$(aws cloudformation describe-stacks --stack-name ${configuration.projectName} --query "Stacks[0].StackStatus" --output text 2>/dev/null || echo "STACK_NOT_FOUND")
-      
-      if [[ "$STACK_STATUS" == "CREATE_COMPLETE" || "$STACK_STATUS" == "UPDATE_COMPLETE" ]]; then
-        # Get outputs
-        OUTPUTS=$(aws cloudformation describe-stacks --stack-name ${configuration.projectName} --query "Stacks[0].Outputs" --output json)
-        echo "{
-          \\"status\\": \\"success\\",
-          \\"message\\": \\"Deployment completed successfully\\",
-          \\"outputs\\": $OUTPUTS,
-          \\"projectName\\": \\"${configuration.projectName}\\",
-          \\"lastUpdated\\": \\"\$(date -u +"%Y-%m-%dT%H:%M:%SZ")\\"
-        }" > "${DEPLOYMENT_STATUS_DIR}/${configuration.projectName}.json"
-        exit 0
-      elif [[ "$STACK_STATUS" == "CREATE_FAILED" || "$STACK_STATUS" == "ROLLBACK_COMPLETE" || "$STACK_STATUS" == "UPDATE_FAILED" ]]; then
-        # Deployment failed
-        echo "{
-          \\"status\\": \\"error\\",
-          \\"message\\": \\"Deployment failed with status: $STACK_STATUS\\",
-          \\"projectName\\": \\"${configuration.projectName}\\",
-          \\"lastUpdated\\": \\"\$(date -u +"%Y-%m-%dT%H:%M:%SZ")\\"
-        }" > "${DEPLOYMENT_STATUS_DIR}/${configuration.projectName}.json"
-        exit 1
-      elif [[ "$STACK_STATUS" == "STACK_NOT_FOUND" ]]; then
-        # Stack not found yet, still in early stages
-        echo "{
-          \\"status\\": \\"in_progress\\",
-          \\"message\\": \\"Preparing deployment...\\",
-          \\"projectName\\": \\"${configuration.projectName}\\",
-          \\"lastUpdated\\": \\"\$(date -u +"%Y-%m-%dT%H:%M:%SZ")\\"
-        }" > "${DEPLOYMENT_STATUS_DIR}/${configuration.projectName}.json"
-      else
-        # Deployment in progress
-        echo "{
-          \\"status\\": \\"in_progress\\",
-          \\"message\\": \\"Deployment in progress with status: $STACK_STATUS\\",
-          \\"projectName\\": \\"${configuration.projectName}\\",
-          \\"lastUpdated\\": \\"\$(date -u +"%Y-%m-%dT%H:%M:%SZ")\\"
-        }" > "${DEPLOYMENT_STATUS_DIR}/${configuration.projectName}.json"
-      fi
-      
-      # Sleep for 10 seconds before checking again
-      sleep 10
-    done
-  `], {
+  // Start status check process
+  const statusCheckProcess = spawn('node', [statusCheckScriptPath], {
     detached: true,
-    stdio: 'ignore'
+    stdio: 'ignore',
+    windowsHide: true
   });
   
   // Unref the status check process
@@ -364,40 +440,6 @@ function startBackgroundDeployment(
 function updateDeploymentStatus(projectName: string, status: any): void {
   const statusFilePath = path.join(DEPLOYMENT_STATUS_DIR, `${projectName}.json`);
   fs.writeFileSync(statusFilePath, JSON.stringify(status, null, 2));
-}
-
-/**
- * Deploy SAM application (synchronous version - not used in main flow)
- * 
- * @param deploymentDir - Path to deployment directory
- * @param configuration - Deployment configuration
- * @returns - Deployment result
- */
-async function deploySamApplication(
-  deploymentDir: string, 
-  configuration: DeploymentConfiguration
-): Promise<DeploySamResult> {
-  // Build SAM application
-  console.log('Building SAM application...');
-  await execAsync('sam build', { cwd: deploymentDir });
-  
-  // Deploy SAM application
-  console.log('Deploying SAM application...');
-  const deployCommand = `sam deploy --stack-name ${configuration.projectName} --capabilities CAPABILITY_IAM --no-confirm-changeset --no-fail-on-empty-changeset`;
-  await execAsync(deployCommand, { cwd: deploymentDir });
-  
-  // Get stack outputs
-  console.log('Getting stack outputs...');
-  const { stdout } = await execAsync(`aws cloudformation describe-stacks --stack-name ${configuration.projectName} --query "Stacks[0].Outputs" --output json`);
-  
-  const outputs = JSON.parse(stdout);
-  const formattedOutputs: Record<string, string> = {};
-  
-  outputs.forEach((output: { OutputKey: string; OutputValue: string }) => {
-    formattedOutputs[output.OutputKey] = output.OutputValue;
-  });
-  
-  return { outputs: formattedOutputs };
 }
 
 export default {
