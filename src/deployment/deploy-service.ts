@@ -7,7 +7,7 @@
 import * as path from 'path';
 import * as fs from 'fs';
 import { promisify } from 'util';
-import { exec } from 'child_process';
+import { exec, spawn } from 'child_process';
 import * as handlebars from 'handlebars';
 import { generateBootstrap } from './bootstrap-generator.js';
 import { 
@@ -16,11 +16,20 @@ import {
   DeploymentConfiguration,
   DeploySamResult
 } from '../types/index.js';
+import * as os from 'os';
 
 const execAsync = promisify(exec);
 const mkdirAsync = promisify(fs.mkdir);
 const writeFileAsync = promisify(fs.writeFile);
 const readFileAsync = promisify(fs.readFile);
+
+// Define the directory where deployment status files will be stored
+const DEPLOYMENT_STATUS_DIR = path.join(os.tmpdir(), 'serverless-web-mcp-deployments');
+
+// Ensure the directory exists
+if (!fs.existsSync(DEPLOYMENT_STATUS_DIR)) {
+  fs.mkdirSync(DEPLOYMENT_STATUS_DIR, { recursive: true });
+}
 
 /**
  * Deploy a web application to AWS serverless infrastructure
@@ -59,17 +68,36 @@ export async function deploy(options: DeployOptions): Promise<DeployResult> {
     // Generate SAM template
     await generateSamTemplate(deploymentType, deploymentDir, configuration);
     
-    // Deploy with SAM CLI
-    const deployResult = await deploySamApplication(deploymentDir, configuration);
+    // Start deployment in background
+    startBackgroundDeployment(deploymentDir, configuration);
+    
+    // Update deployment status
+    updateDeploymentStatus(configuration.projectName, {
+      status: 'in_progress',
+      message: `Deployment of ${deploymentType} application started. Check status with deployment:${configuration.projectName} resource.`,
+      startTime: new Date().toISOString(),
+      projectName: configuration.projectName,
+      deploymentType,
+      lastUpdated: new Date().toISOString()
+    });
     
     return {
-      status: 'success',
-      message: `Successfully deployed ${deploymentType} application: ${configuration.projectName}`,
-      outputs: deployResult.outputs,
+      status: 'in_progress',
+      message: `Deployment of ${deploymentType} application started. Check status with deployment:${configuration.projectName} resource.`,
       stackName: configuration.projectName
     };
   } catch (error) {
     console.error('Deployment failed:', error);
+    
+    // Update deployment status
+    updateDeploymentStatus(configuration.projectName, {
+      status: 'error',
+      message: `Deployment failed: ${error instanceof Error ? error.message : String(error)}`,
+      error: String(error),
+      projectName: configuration.projectName,
+      lastUpdated: new Date().toISOString()
+    });
+    
     return {
       status: 'error',
       message: `Deployment failed: ${error instanceof Error ? error.message : String(error)}`,
@@ -230,7 +258,116 @@ async function generateSamTemplate(
 }
 
 /**
- * Deploy SAM application
+ * Start deployment in background
+ * 
+ * @param deploymentDir - Path to deployment directory
+ * @param configuration - Deployment configuration
+ */
+function startBackgroundDeployment(
+  deploymentDir: string, 
+  configuration: DeploymentConfiguration
+): void {
+  // Run deployment in background
+  const deploymentProcess = spawn('bash', ['-c', `
+    cd "${deploymentDir}" && 
+    echo "Building SAM application..." && 
+    sam build && 
+    echo "Deploying SAM application..." && 
+    sam deploy --stack-name ${configuration.projectName} --capabilities CAPABILITY_IAM --no-confirm-changeset --no-fail-on-empty-changeset && 
+    echo "Getting stack outputs..." && 
+    aws cloudformation describe-stacks --stack-name ${configuration.projectName} --query "Stacks[0].Outputs" --output json > outputs.json && 
+    echo "Deployment completed successfully."
+  `], {
+    detached: true,
+    stdio: 'ignore'
+  });
+  
+  // Unref the process to allow the parent process to exit
+  deploymentProcess.unref();
+  
+  // Set up a process to check deployment status periodically
+  const statusCheckProcess = spawn('bash', ['-c', `
+    cd "${deploymentDir}" && 
+    while true; do
+      if [ -f "outputs.json" ]; then
+        # Deployment completed successfully
+        OUTPUTS=$(cat outputs.json)
+        echo "{
+          \\"status\\": \\"success\\",
+          \\"message\\": \\"Deployment completed successfully\\",
+          \\"outputs\\": $OUTPUTS,
+          \\"projectName\\": \\"${configuration.projectName}\\",
+          \\"lastUpdated\\": \\"\$(date -u +"%Y-%m-%dT%H:%M:%SZ")\\"
+        }" > "${DEPLOYMENT_STATUS_DIR}/${configuration.projectName}.json"
+        exit 0
+      fi
+      
+      # Check if the deployment is still running
+      STACK_STATUS=$(aws cloudformation describe-stacks --stack-name ${configuration.projectName} --query "Stacks[0].StackStatus" --output text 2>/dev/null || echo "STACK_NOT_FOUND")
+      
+      if [[ "$STACK_STATUS" == "CREATE_COMPLETE" || "$STACK_STATUS" == "UPDATE_COMPLETE" ]]; then
+        # Get outputs
+        OUTPUTS=$(aws cloudformation describe-stacks --stack-name ${configuration.projectName} --query "Stacks[0].Outputs" --output json)
+        echo "{
+          \\"status\\": \\"success\\",
+          \\"message\\": \\"Deployment completed successfully\\",
+          \\"outputs\\": $OUTPUTS,
+          \\"projectName\\": \\"${configuration.projectName}\\",
+          \\"lastUpdated\\": \\"\$(date -u +"%Y-%m-%dT%H:%M:%SZ")\\"
+        }" > "${DEPLOYMENT_STATUS_DIR}/${configuration.projectName}.json"
+        exit 0
+      elif [[ "$STACK_STATUS" == "CREATE_FAILED" || "$STACK_STATUS" == "ROLLBACK_COMPLETE" || "$STACK_STATUS" == "UPDATE_FAILED" ]]; then
+        # Deployment failed
+        echo "{
+          \\"status\\": \\"error\\",
+          \\"message\\": \\"Deployment failed with status: $STACK_STATUS\\",
+          \\"projectName\\": \\"${configuration.projectName}\\",
+          \\"lastUpdated\\": \\"\$(date -u +"%Y-%m-%dT%H:%M:%SZ")\\"
+        }" > "${DEPLOYMENT_STATUS_DIR}/${configuration.projectName}.json"
+        exit 1
+      elif [[ "$STACK_STATUS" == "STACK_NOT_FOUND" ]]; then
+        # Stack not found yet, still in early stages
+        echo "{
+          \\"status\\": \\"in_progress\\",
+          \\"message\\": \\"Preparing deployment...\\",
+          \\"projectName\\": \\"${configuration.projectName}\\",
+          \\"lastUpdated\\": \\"\$(date -u +"%Y-%m-%dT%H:%M:%SZ")\\"
+        }" > "${DEPLOYMENT_STATUS_DIR}/${configuration.projectName}.json"
+      else
+        # Deployment in progress
+        echo "{
+          \\"status\\": \\"in_progress\\",
+          \\"message\\": \\"Deployment in progress with status: $STACK_STATUS\\",
+          \\"projectName\\": \\"${configuration.projectName}\\",
+          \\"lastUpdated\\": \\"\$(date -u +"%Y-%m-%dT%H:%M:%SZ")\\"
+        }" > "${DEPLOYMENT_STATUS_DIR}/${configuration.projectName}.json"
+      fi
+      
+      # Sleep for 10 seconds before checking again
+      sleep 10
+    done
+  `], {
+    detached: true,
+    stdio: 'ignore'
+  });
+  
+  // Unref the status check process
+  statusCheckProcess.unref();
+}
+
+/**
+ * Update deployment status
+ * 
+ * @param projectName - Project name
+ * @param status - Deployment status
+ */
+function updateDeploymentStatus(projectName: string, status: any): void {
+  const statusFilePath = path.join(DEPLOYMENT_STATUS_DIR, `${projectName}.json`);
+  fs.writeFileSync(statusFilePath, JSON.stringify(status, null, 2));
+}
+
+/**
+ * Deploy SAM application (synchronous version - not used in main flow)
  * 
  * @param deploymentDir - Path to deployment directory
  * @param configuration - Deployment configuration
