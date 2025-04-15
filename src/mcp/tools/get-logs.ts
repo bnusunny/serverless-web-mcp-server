@@ -6,6 +6,7 @@
 
 import { McpTool } from './index.js';
 import { z } from 'zod';
+import { logger } from '../../utils/logger.js';
 
 /**
  * Get logs tool handler
@@ -41,7 +42,7 @@ async function handleGetLogs(params: any): Promise<any> {
       ]
     };
   } catch (error) {
-    console.error('Get logs tool error:', error);
+    logger.error('Get logs tool error:', error);
     return {
       status: 'error',
       message: `Failed to retrieve logs: ${error instanceof Error ? error.message : String(error)}`

@@ -6,6 +6,7 @@
 
 import { McpTool } from './index.js';
 import { z } from 'zod';
+import { logger } from '../../utils/logger.js';
 
 /**
  * Provision database tool handler
@@ -78,7 +79,7 @@ async function handleProvisionDatabase(params: any): Promise<any> {
       }
     };
   } catch (error) {
-    console.error('Provision database tool error:', error);
+    logger.error('Provision database tool error:', error);
     return {
       status: 'error',
       message: `Database provisioning failed: ${error instanceof Error ? error.message : String(error)}`

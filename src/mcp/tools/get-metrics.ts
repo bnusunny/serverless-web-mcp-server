@@ -6,6 +6,7 @@
 
 import { McpTool } from './index.js';
 import { z } from 'zod';
+import { logger } from '../../utils/logger.js';
 
 /**
  * Get metrics tool handler
@@ -58,7 +59,7 @@ async function handleGetMetrics(params: any): Promise<any> {
       }
     };
   } catch (error) {
-    console.error('Get metrics tool error:', error);
+    logger.error('Get metrics tool error:', error);
     return {
       status: 'error',
       message: `Failed to retrieve metrics: ${error instanceof Error ? error.message : String(error)}`
