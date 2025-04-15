@@ -7,7 +7,7 @@
 import * as path from 'path';
 import * as fs from 'fs';
 import { promisify } from 'util';
-import { exec } from 'child_process';
+import { exec, spawn } from 'child_process';
 import * as handlebars from 'handlebars';
 import { generateBootstrap } from './bootstrap-generator.js';
 import { 
@@ -120,7 +120,7 @@ export async function deploy(options: DeployOptions): Promise<DeployResult> {
 }
 
 /**
- * Build and deploy the application
+ * Build and deploy the application using non-blocking spawn
  * 
  * @param deploymentDir - Path to deployment directory
  * @param configuration - Deployment configuration
@@ -138,18 +138,8 @@ async function buildAndDeployApplication(
       lastUpdated: new Date().toISOString()
     });
     
-    // Run sam build
-    try {
-      await execAsync('sam build', { cwd: deploymentDir });
-    } catch (buildError: any) {
-      updateDeploymentStatus(configuration.projectName, {
-        status: 'error',
-        message: `Build failed: ${buildError.message}`,
-        projectName: configuration.projectName,
-        lastUpdated: new Date().toISOString()
-      });
-      return;
-    }
+    // Run sam build in a non-blocking way
+    await runSamBuild(deploymentDir, configuration.projectName);
     
     // Update status to deploying
     updateDeploymentStatus(configuration.projectName, {
@@ -159,50 +149,20 @@ async function buildAndDeployApplication(
       lastUpdated: new Date().toISOString()
     });
     
-    // Deploy using SAM CLI
-    try {
-      const deployCommand = `sam deploy --stack-name ${configuration.projectName} --capabilities CAPABILITY_IAM --no-confirm-changeset --no-fail-on-empty-changeset`;
-      await execAsync(deployCommand, { cwd: deploymentDir });
-      
-      // Get stack outputs
-      const { stdout } = await execAsync(
-        `aws cloudformation describe-stacks --stack-name ${configuration.projectName} --query "Stacks[0].Outputs" --output json`
-      );
-      
-      const outputs = JSON.parse(stdout);
-      
-      // Update status to success
-      updateDeploymentStatus(configuration.projectName, {
-        status: 'success',
-        message: 'Deployment completed successfully',
-        outputs,
-        projectName: configuration.projectName,
-        lastUpdated: new Date().toISOString()
-      });
-    } catch (deployError: any) {
-      // Check if the stack exists and get its status
-      try {
-        const { stdout } = await execAsync(
-          `aws cloudformation describe-stacks --stack-name ${configuration.projectName} --query "Stacks[0].StackStatus" --output text`
-        );
-        
-        const stackStatus = stdout.trim();
-        updateDeploymentStatus(configuration.projectName, {
-          status: 'error',
-          message: `Deployment failed with status: ${stackStatus}`,
-          projectName: configuration.projectName,
-          lastUpdated: new Date().toISOString()
-        });
-      } catch (innerError) {
-        // Stack might not exist
-        updateDeploymentStatus(configuration.projectName, {
-          status: 'error',
-          message: `Deployment failed: ${deployError.message}`,
-          projectName: configuration.projectName,
-          lastUpdated: new Date().toISOString()
-        });
-      }
-    }
+    // Run sam deploy in a non-blocking way
+    await runSamDeploy(deploymentDir, configuration);
+    
+    // Get stack outputs
+    const outputs = await getStackOutputs(configuration.projectName);
+    
+    // Update status to success
+    updateDeploymentStatus(configuration.projectName, {
+      status: 'success',
+      message: 'Deployment completed successfully',
+      outputs,
+      projectName: configuration.projectName,
+      lastUpdated: new Date().toISOString()
+    });
   } catch (error: any) {
     updateDeploymentStatus(configuration.projectName, {
       status: 'error',
@@ -210,6 +170,141 @@ async function buildAndDeployApplication(
       projectName: configuration.projectName,
       lastUpdated: new Date().toISOString()
     });
+  }
+}
+
+/**
+ * Run SAM build using non-blocking spawn
+ * 
+ * @param deploymentDir - Path to deployment directory
+ * @param projectName - Project name
+ */
+async function runSamBuild(deploymentDir: string, projectName: string): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
+    // Create the build process
+    const buildProcess = spawn('sam', ['build'], {
+      cwd: deploymentDir,
+      stdio: 'pipe',
+      shell: true // Use shell for cross-platform compatibility
+    });
+    
+    let buildOutput = '';
+    let buildError = '';
+    
+    // Capture stdout
+    buildProcess.stdout?.on('data', (data) => {
+      const output = data.toString();
+      buildOutput += output;
+      console.log(`[${projectName} build] ${output.trim()}`);
+    });
+    
+    // Capture stderr
+    buildProcess.stderr?.on('data', (data) => {
+      const output = data.toString();
+      buildError += output;
+      console.error(`[${projectName} build error] ${output.trim()}`);
+    });
+    
+    // Handle process completion
+    buildProcess.on('close', (code) => {
+      if (code === 0) {
+        resolve();
+      } else {
+        reject(new Error(`SAM build failed with code ${code}: ${buildError}`));
+      }
+    });
+    
+    // Handle process errors
+    buildProcess.on('error', (error) => {
+      reject(new Error(`Failed to start SAM build: ${error.message}`));
+    });
+  });
+}
+
+/**
+ * Run SAM deploy using non-blocking spawn
+ * 
+ * @param deploymentDir - Path to deployment directory
+ * @param configuration - Deployment configuration
+ */
+async function runSamDeploy(
+  deploymentDir: string, 
+  configuration: DeploymentConfiguration
+): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
+    // Create the deploy process
+    const deployProcess = spawn('sam', [
+      'deploy',
+      '--stack-name', configuration.projectName,
+      '--capabilities', 'CAPABILITY_IAM',
+      '--no-confirm-changeset',
+      '--no-fail-on-empty-changeset'
+    ], {
+      cwd: deploymentDir,
+      stdio: 'pipe',
+      shell: true // Use shell for cross-platform compatibility
+    });
+    
+    let deployOutput = '';
+    let deployError = '';
+    
+    // Capture stdout
+    deployProcess.stdout?.on('data', (data) => {
+      const output = data.toString();
+      deployOutput += output;
+      console.log(`[${configuration.projectName} deploy] ${output.trim()}`);
+    });
+    
+    // Capture stderr
+    deployProcess.stderr?.on('data', (data) => {
+      const output = data.toString();
+      deployError += output;
+      console.error(`[${configuration.projectName} deploy error] ${output.trim()}`);
+    });
+    
+    // Handle process completion
+    deployProcess.on('close', (code) => {
+      if (code === 0) {
+        resolve();
+      } else {
+        reject(new Error(`SAM deploy failed with code ${code}: ${deployError}`));
+      }
+    });
+    
+    // Handle process errors
+    deployProcess.on('error', (error) => {
+      reject(new Error(`Failed to start SAM deploy: ${error.message}`));
+    });
+  });
+}
+
+/**
+ * Get stack outputs
+ * 
+ * @param stackName - Stack name
+ * @returns - Stack outputs
+ */
+async function getStackOutputs(stackName: string): Promise<Record<string, string>> {
+  try {
+    // Run the AWS CLI command to get stack outputs
+    const { stdout } = await execAsync(
+      `aws cloudformation describe-stacks --stack-name ${stackName} --query "Stacks[0].Outputs" --output json`
+    );
+    
+    // Parse the outputs
+    const outputs = JSON.parse(stdout);
+    const formattedOutputs: Record<string, string> = {};
+    
+    if (Array.isArray(outputs)) {
+      outputs.forEach((output: { OutputKey: string; OutputValue: string }) => {
+        formattedOutputs[output.OutputKey] = output.OutputValue;
+      });
+    }
+    
+    return formattedOutputs;
+  } catch (error: any) {
+    console.error(`Error getting stack outputs for ${stackName}:`, error);
+    return {};
   }
 }
 
