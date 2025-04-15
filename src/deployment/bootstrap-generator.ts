@@ -9,6 +9,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { promisify } from 'util';
 import { BootstrapOptions, PackageJson } from '../types/index.js';
+import { logger } from '../utils/logger.js';
 
 const readFileAsync = promisify(fs.readFile);
 const writeFileAsync = promisify(fs.writeFile);
@@ -40,7 +41,7 @@ export async function generateBootstrap(options: BootstrapOptions): Promise<stri
   // Make bootstrap file executable
   await chmodAsync(bootstrapPath, 0o755);
   
-  console.log(`Generated bootstrap file for ${detectedFramework} at ${bootstrapPath}`);
+  logger.info(`Generated bootstrap file for ${detectedFramework} at ${bootstrapPath}`);
   return bootstrapPath;
 }
 
