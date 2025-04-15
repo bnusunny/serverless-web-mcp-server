@@ -1,68 +1,155 @@
-# AWS Lambda Web Adapter Integration
+# AWS Lambda Web Adapter
 
-The Serverless Web MCP Server uses AWS Lambda Web Adapter to run web applications on AWS Lambda. This document explains how the integration works and provides details on the configuration options.
+The AWS Lambda Web Adapter allows you to run web applications on AWS Lambda without any code changes. This document explains how the adapter works and how it's integrated into the serverless-web-mcp-server.
 
 ## Overview
 
-AWS Lambda Web Adapter allows developers to build web applications with familiar frameworks (like Express.js, Next.js, Flask, SpringBoot, etc.) and run them on AWS Lambda without any code changes. The adapter acts as a bridge between the Lambda execution environment and your web application.
-
-![Lambda Web Adapter Overview](https://github.com/awslabs/aws-lambda-web-adapter/raw/main/docs/images/lambda-adapter-overview.png)
+AWS Lambda Web Adapter is a Lambda layer that transforms HTTP requests from API Gateway into a format that web frameworks can understand, and transforms responses back to the format expected by API Gateway.
 
 ## How It Works
 
-When you deploy a web application using the Serverless Web MCP Server:
+1. API Gateway receives an HTTP request
+2. The request is forwarded to Lambda
+3. Lambda Web Adapter intercepts the request
+4. The adapter transforms the request into a standard HTTP request
+5. The web application processes the request and returns a response
+6. The adapter transforms the response back to the format expected by Lambda
+7. Lambda returns the response to API Gateway
+8. API Gateway returns the response to the client
 
-1. The server packages your application code
-2. It attaches the Lambda Web Adapter layer to your Lambda function
-3. It configures the necessary environment variables
-4. When invoked, the adapter forwards HTTP requests to your web application and returns the responses
+## Bootstrap File Generation
 
-This approach allows you to develop web applications locally using standard web frameworks and deploy them to AWS Lambda without any modifications.
+The serverless-web-mcp-server automatically generates a bootstrap file for your web application based on the framework and project structure. This bootstrap file is responsible for starting your web application when the Lambda function is invoked.
 
-## Lambda Web Adapter Layer ARNs
+### Hybrid Approach
 
-The Serverless Web MCP Server uses the following Lambda Web Adapter layer ARNs:
+The server uses a hybrid approach to generate the bootstrap file:
 
-### AWS Commercial Regions
+1. **Framework Detection**: If the framework is not specified, the server analyzes the project structure to detect the framework.
+2. **Entry Point Detection**: If the entry point is not specified, the server analyzes the project structure to detect the entry point.
+3. **User Input**: If the framework or entry point cannot be detected, the server prompts the user for input.
+
+### Supported Frameworks
+
+The server supports the following frameworks:
+
+- **Node.js**:
+  - Express.js
+  - Next.js
+  - Koa
+  - Fastify
+  - Generic Node.js
+
+- **Python**:
+  - Flask
+  - FastAPI
+  - Django
+  - Generic Python
+
+- **Ruby**:
+  - Rails
+  - Sinatra
+  - Generic Ruby
+
+### Bootstrap File Examples
+
+#### Express.js
+
+```bash
+#!/bin/bash
+# Bootstrap script for express application
+set -e
+
+# Set environment variables
+export NODE_ENV=production
+
+# Start the application
+exec node app.js
+```
+
+#### Flask
+
+```bash
+#!/bin/bash
+# Bootstrap script for Flask application
+set -e
+
+# Set environment variables
+export FLASK_APP=app.py
+export FLASK_ENV=production
+
+# Start the application
+exec python -m flask run --host=0.0.0.0 --port=$PORT
+```
+
+#### FastAPI
+
+```bash
+#!/bin/bash
+# Bootstrap script for FastAPI application
+set -e
+
+# Start the application
+exec uvicorn main:app --host=0.0.0.0 --port=$PORT
+```
+
+## Lambda Web Adapter Layer
+
+The server uses the AWS Lambda Web Adapter layer provided by AWS. The layer ARN is:
+
 - x86_64: `arn:aws:lambda:${AWS::Region}:753240598075:layer:LambdaAdapterLayerX86:24`
 - arm64: `arn:aws:lambda:${AWS::Region}:753240598075:layer:LambdaAdapterLayerArm64:24`
 
-### AWS China Regions
-- cn-north-1 (Beijing)
-  - x86_64: `arn:aws-cn:lambda:cn-north-1:041581134020:layer:LambdaAdapterLayerX86:24`
-- cn-northwest-1 (Ningxia)
-  - x86_64: `arn:aws-cn:lambda:cn-northwest-1:069767869989:layer:LambdaAdapterLayerX86:24`
+## Configuration
 
-## Configuration Options
+The Lambda Web Adapter is configured through environment variables:
 
-The Lambda Web Adapter can be configured using environment variables. The Serverless Web MCP Server sets these variables based on your deployment configuration:
+- `PORT`: The port on which your web application listens (default: 8080)
+- `AWS_LAMBDA_EXEC_WRAPPER`: The path to the bootstrap wrapper (default: /opt/bootstrap)
 
-| Environment Variable | Description | Default Value |
-|---------------------|-------------|---------------|
-| AWS_LWA_PORT | The port your web application listens on | 8080 |
-| AWS_LWA_READINESS_CHECK_PATH | Path used to check if your application is ready | / |
-| AWS_LWA_READINESS_CHECK_PROTOCOL | Protocol used for readiness check (http or tcp) | http |
-| AWS_LWA_ASYNC_INIT | Enable asynchronous initialization for long initialization functions | false |
-| AWS_LWA_REMOVE_BASE_PATH | Base path to be removed from request path | None |
-| AWS_LWA_ENABLE_COMPRESSION | Enable gzip compression for response body | false |
+## Framework-Specific Configuration
 
-## Local Development
+### Express.js
 
-For local development, you can run your web application normally without the Lambda Web Adapter. The adapter is only needed when deploying to AWS Lambda.
+```yaml
+Environment:
+  Variables:
+    PORT: 8080
+    AWS_LAMBDA_EXEC_WRAPPER: /opt/bootstrap
+    NODE_OPTIONS: --enable-source-maps
+```
 
-## Graceful Shutdown
+### Flask
 
-The Lambda Web Adapter enables graceful shutdown for your web application. When Lambda is about to shut down an execution environment, it sends a SIGTERM signal to your application, allowing it to perform cleanup tasks before termination.
+```yaml
+Environment:
+  Variables:
+    PORT: 8080
+    AWS_LAMBDA_EXEC_WRAPPER: /opt/bootstrap
+    FLASK_APP: app.py
+```
 
-## Request Context and Lambda Context
+### FastAPI
 
-The Lambda Web Adapter forwards API Gateway request context and Lambda context information to your web application via HTTP headers:
+```yaml
+Environment:
+  Variables:
+    PORT: 8080
+    AWS_LAMBDA_EXEC_WRAPPER: /opt/bootstrap
+    APP_MODULE: main:app
+```
 
-- `x-amzn-request-context`: Contains API Gateway request context (requestId, requestTime, identity, etc.)
-- `x-amzn-lambda-context`: Contains Lambda context information (functionName, functionVersion, etc.)
+## Troubleshooting
 
-## Additional Resources
+If you encounter issues with the Lambda Web Adapter, check the following:
+
+1. **Bootstrap File**: Make sure the bootstrap file is executable (`chmod +x bootstrap`)
+2. **Environment Variables**: Make sure the environment variables are set correctly
+3. **Entry Point**: Make sure the entry point is correct
+4. **Dependencies**: Make sure all dependencies are installed
+5. **Lambda Logs**: Check the Lambda logs for error messages
+
+## References
 
 - [AWS Lambda Web Adapter GitHub Repository](https://github.com/awslabs/aws-lambda-web-adapter)
-- [AWS Lambda Web Adapter Documentation](https://github.com/awslabs/aws-lambda-web-adapter/blob/main/README.md)
-- [AWS Lambda Web Adapter Examples](https://github.com/awslabs/aws-lambda-web-adapter/tree/main/examples)
+- [AWS Lambda Web Adapter Documentation](https://docs.aws.amazon.com/lambda/latest/dg/lambda-web-adapter.html)

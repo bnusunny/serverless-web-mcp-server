@@ -1,23 +1,18 @@
 {
-  "name": "serverless-express-backend",
+  "name": "backend-express",
   "version": "1.0.0",
-  "description": "Example Express.js backend for serverless deployment",
-  "main": "index.js",
+  "description": "Express.js backend for serverless deployment with Lambda Web Adapter",
+  "main": "app.js",
   "scripts": {
-    "start": "node index.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "node app.js",
+    "test": "jest"
   },
-  "keywords": [
-    "express",
-    "serverless",
-    "aws",
-    "lambda",
-    "api-gateway"
-  ],
-  "author": "",
-  "license": "MIT",
   "dependencies": {
     "cors": "^2.8.5",
     "express": "^4.18.2"
+  },
+  "devDependencies": {
+    "jest": "^29.5.0",
+    "supertest": "^6.3.3"
   }
 }

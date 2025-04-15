@@ -1,310 +1,251 @@
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
+import { logger } from '../utils/logger.js';
+import { getStackInfo, mapCloudFormationStatus } from './cloudformation.js';
 
-// Define the directory where deployment status files will be stored
-const DEPLOYMENT_STATUS_DIR = path.join(os.tmpdir(), 'serverless-web-mcp-deployments');
+// Define the directory where deployment metadata files will be stored
+const DEPLOYMENT_METADATA_DIR = path.join(os.tmpdir(), 'serverless-web-mcp-deployments');
 
 // Ensure the directory exists
-if (!fs.existsSync(DEPLOYMENT_STATUS_DIR)) {
-  fs.mkdirSync(DEPLOYMENT_STATUS_DIR, { recursive: true });
+if (!fs.existsSync(DEPLOYMENT_METADATA_DIR)) {
+  fs.mkdirSync(DEPLOYMENT_METADATA_DIR, { recursive: true });
 }
 
 /**
- * Initialize deployment status for a new deployment
+ * Initialize deployment metadata for a new deployment
+ * This stores minimal information needed to query CloudFormation later
  */
-export function initializeDeploymentStatus(projectName: string, deploymentType: string, framework: string): void {
-  const statusFile = path.join(DEPLOYMENT_STATUS_DIR, `${projectName}.json`);
-  const progressFile = path.join(DEPLOYMENT_STATUS_DIR, `${projectName}-progress.log`);
+export async function initializeDeploymentStatus(projectName: string, deploymentType: string, framework: string): Promise<void> {
+  const metadataFile = path.join(DEPLOYMENT_METADATA_DIR, `${projectName}.json`);
+  const stackName = `${projectName}-stack`;
   
   try {
-    // Create the status file
-    fs.writeFileSync(statusFile, JSON.stringify({
-      status: 'in_progress',
+    // Create the metadata file with minimal information
+    await fs.promises.writeFile(metadataFile, JSON.stringify({
+      projectName,
+      stackName,
       timestamp: new Date().toISOString(),
       deploymentType,
       framework,
-      message: `Deployment of ${projectName} initiated`
+      region: process.env.AWS_REGION || 'us-east-1'
     }, null, 2));
     
-    // Create an empty progress log file
-    fs.writeFileSync(progressFile, `[${new Date().toISOString()}] Deployment of ${projectName} initiated\n`);
-    
-    console.log(`Deployment status initialized for ${projectName}`);
+    logger.info(`Deployment metadata initialized for ${projectName}`);
   } catch (error) {
-    console.error(`Failed to initialize deployment status for ${projectName}:`, error);
-  }
-}
-export function storeDeploymentResult(projectName: string, result: any): void {
-  const statusFile = path.join(DEPLOYMENT_STATUS_DIR, `${projectName}.json`);
-  
-  try {
-    fs.writeFileSync(statusFile, JSON.stringify({
-      status: 'completed',
-      timestamp: new Date().toISOString(),
-      result
-    }, null, 2));
-    
-    console.log(`Deployment status stored for ${projectName}`);
-  } catch (error) {
-    console.error(`Failed to store deployment status for ${projectName}:`, error);
+    logger.error(`Failed to initialize deployment metadata for ${projectName}:`, error);
   }
 }
 
 /**
- * Store deployment error for later retrieval
+ * Store additional deployment metadata if needed
+ * This is used for information that isn't available in CloudFormation
  */
-export function storeDeploymentError(projectName: string, error: any): void {
-  const statusFile = path.join(DEPLOYMENT_STATUS_DIR, `${projectName}.json`);
+export async function storeDeploymentMetadata(projectName: string, metadata: any): Promise<void> {
+  const metadataFile = path.join(DEPLOYMENT_METADATA_DIR, `${projectName}.json`);
   
   try {
-    fs.writeFileSync(statusFile, JSON.stringify({
-      status: 'failed',
-      timestamp: new Date().toISOString(),
-      error: error instanceof Error ? error.message : String(error)
-    }, null, 2));
-    
-    console.log(`Deployment error stored for ${projectName}`);
-  } catch (error) {
-    console.error(`Failed to store deployment error for ${projectName}:`, error);
-  }
-}
-
-/**
- * Store deployment progress update
- */
-export function storeDeploymentProgress(projectName: string, message: string): void {
-  const progressFile = path.join(DEPLOYMENT_STATUS_DIR, `${projectName}-progress.log`);
-  const statusFile = path.join(DEPLOYMENT_STATUS_DIR, `${projectName}.json`);
-  
-  try {
-    // Append to the progress log
-    fs.appendFileSync(progressFile, `[${new Date().toISOString()}] ${message}\n`);
-    
-    // Also update the current status message in the status file
-    if (fs.existsSync(statusFile)) {
-      try {
-        const statusContent = fs.readFileSync(statusFile, 'utf8');
-        const status = JSON.parse(statusContent);
-        
-        // Only update if the status is still in_progress
-        if (status.status === 'in_progress') {
-          status.message = message;
-          status.lastUpdated = new Date().toISOString();
-          fs.writeFileSync(statusFile, JSON.stringify(status, null, 2));
-        }
-      } catch (err) {
-        console.error(`Error updating status file for ${projectName}:`, err);
-      }
+    // Read existing metadata
+    let existingMetadata = {};
+    try {
+      const content = await fs.promises.readFile(metadataFile, 'utf8');
+      existingMetadata = JSON.parse(content);
+    } catch (error) {
+      // File might not exist yet, that's ok
     }
+    
+    // Merge with new metadata
+    const updatedMetadata = {
+      ...existingMetadata,
+      ...metadata,
+      lastUpdated: new Date().toISOString()
+    };
+    
+    // Write back to file
+    await fs.promises.writeFile(metadataFile, JSON.stringify(updatedMetadata, null, 2));
+    
+    logger.info(`Deployment metadata updated for ${projectName}`);
   } catch (error) {
-    console.error(`Failed to store deployment progress for ${projectName}:`, error);
+    logger.error(`Failed to store deployment metadata for ${projectName}:`, error);
   }
 }
 
 /**
- * Get deployment status for a project
- * 
- * This function returns immediately with the current status without waiting for completion.
- * It also extracts CloudFormation status from progress logs if available.
+ * Store deployment error for cases where CloudFormation wasn't involved
+ * For example, if the deployment failed before CloudFormation was called
+ */
+export async function storeDeploymentError(projectName: string, error: any): Promise<void> {
+  await storeDeploymentMetadata(projectName, {
+    error: error instanceof Error ? error.message : String(error),
+    errorTimestamp: new Date().toISOString()
+  });
+}
+
+/**
+ * Get deployment status by combining metadata and CloudFormation status
  */
 export async function getDeploymentStatus(projectName: string): Promise<any> {
-  const statusFile = path.join(DEPLOYMENT_STATUS_DIR, `${projectName}.json`);
-  const progressFile = path.join(DEPLOYMENT_STATUS_DIR, `${projectName}-progress.log`);
+  const metadataFile = path.join(DEPLOYMENT_METADATA_DIR, `${projectName}.json`);
   
   try {
-    // Check if status file exists
-    if (fs.existsSync(statusFile)) {
-      const statusContent = fs.readFileSync(statusFile, 'utf8');
-      const status = JSON.parse(statusContent);
-      
-      // Add progress logs if available
-      if (fs.existsSync(progressFile)) {
-        const progressContent = fs.readFileSync(progressFile, 'utf8');
-        const progressLogs = progressContent.split('\n').filter(line => line.trim() !== '');
-        status.progressLogs = progressLogs;
-        
-        // Extract CloudFormation resource status from progress logs if deployment is in progress
-        if (status.status === 'in_progress') {
-          status.resources = extractResourceStatus(progressLogs);
-          status.currentPhase = determineDeploymentPhase(progressLogs);
-          status.estimatedPercentComplete = estimateCompletion(progressLogs);
-        }
-      } else {
-        status.progressLogs = [];
-      }
-      
-      return status;
-    } else if (fs.existsSync(progressFile)) {
-      // If only progress file exists, deployment is still in progress
-      const progressContent = fs.readFileSync(progressFile, 'utf8');
-      const progressLogs = progressContent.split('\n').filter(line => line.trim() !== '');
-      
-      // Extract the latest message
-      const latestMessage = progressLogs.length > 0 
-        ? progressLogs[progressLogs.length - 1].replace(/^\[\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}.\d{3}Z\] /, '') 
-        : 'Deployment in progress';
-      
-      // Extract CloudFormation resource status
-      const resources = extractResourceStatus(progressLogs);
-      const currentPhase = determineDeploymentPhase(progressLogs);
-      const estimatedPercentComplete = estimateCompletion(progressLogs);
-      
-      return {
-        status: 'in_progress',
-        timestamp: new Date().toISOString(),
-        message: latestMessage,
-        progressLogs,
-        resources,
-        currentPhase,
-        estimatedPercentComplete
-      };
-    } else {
-      // No deployment found
-      console.log(`No deployment files found for project: ${projectName}`);
+    // Check if metadata file exists
+    if (!fs.existsSync(metadataFile)) {
+      logger.info(`No deployment metadata found for project: ${projectName}`);
       return {
         status: 'not_found',
         message: `No deployment found for project: ${projectName}`
       };
     }
+    
+    // Read metadata file
+    const metadataContent = await fs.promises.readFile(metadataFile, 'utf8');
+    const metadata = JSON.parse(metadataContent);
+    
+    // If there's an error stored in metadata and no stack info, return the error
+    if (metadata.error && !metadata.stackId) {
+      return {
+        status: 'failed',
+        timestamp: metadata.errorTimestamp || metadata.timestamp,
+        deploymentType: metadata.deploymentType,
+        framework: metadata.framework,
+        message: metadata.error
+      };
+    }
+    
+    // Get stack info from CloudFormation
+    const stackName = metadata.stackName || `${projectName}-stack`;
+    const region = metadata.region || process.env.AWS_REGION || 'us-east-1';
+    
+    try {
+      const stackInfo = await getStackInfo(stackName, region);
+      
+      // If stack not found but we have metadata, deployment is in progress or failed before CF was called
+      if (stackInfo.status === 'NOT_FOUND') {
+        return {
+          status: metadata.error ? 'failed' : 'in_progress',
+          timestamp: metadata.timestamp,
+          deploymentType: metadata.deploymentType,
+          framework: metadata.framework,
+          message: metadata.error || 'Deployment initiated, waiting for CloudFormation stack creation'
+        };
+      }
+      
+      // Map CloudFormation status to our status format
+      const status = mapCloudFormationStatus(stackInfo.status);
+      
+      // Get endpoint URL if available
+      let endpoint = null;
+      if (stackInfo.outputs) {
+        endpoint = stackInfo.outputs.ApiEndpoint || 
+                  stackInfo.outputs.WebsiteURL || 
+                  stackInfo.outputs.ApiUrl || 
+                  null;
+      }
+      
+      // Return combined information
+      return {
+        status,
+        stackStatus: stackInfo.status,
+        stackStatusReason: stackInfo.statusReason,
+        timestamp: metadata.timestamp,
+        lastUpdated: stackInfo.lastUpdatedTime || metadata.lastUpdated,
+        deploymentType: metadata.deploymentType,
+        framework: metadata.framework,
+        endpoint,
+        outputs: stackInfo.outputs,
+        resources: stackInfo.resources,
+        region
+      };
+    } catch (error) {
+      // If CloudFormation query fails, return metadata with error
+      logger.error(`Failed to get CloudFormation stack info for ${projectName}:`, error);
+      return {
+        status: 'unknown',
+        timestamp: metadata.timestamp,
+        deploymentType: metadata.deploymentType,
+        framework: metadata.framework,
+        message: `Error querying CloudFormation: ${error instanceof Error ? error.message : String(error)}`
+      };
+    }
   } catch (error) {
-    console.error(`Failed to get deployment status for ${projectName}:`, error);
+    logger.error(`Failed to get deployment status for ${projectName}:`, error);
     throw new Error(`Failed to get deployment status: ${error instanceof Error ? error.message : String(error)}`);
   }
 }
 
 /**
- * Extract CloudFormation resource status from progress logs
+ * List all deployments by combining metadata and CloudFormation status
  */
-function extractResourceStatus(logs: string[]): any[] {
-  const resources: any[] = [];
-  const resourceMap = new Map<string, any>();
-  
-  // Regular expression to match CloudFormation resource status lines
-  const cfnStatusRegex = /([A-Z_]+)\s+([A-Za-z0-9:]+)\s+([A-Za-z0-9]+)\s+(.*)$/;
-  
-  for (const log of logs) {
-    const match = log.match(cfnStatusRegex);
-    if (match) {
-      const [, status, resourceType, logicalId, reason] = match;
-      
-      // Update or add the resource
-      resourceMap.set(logicalId, {
-        logicalId,
-        resourceType,
-        status,
-        reason: reason.trim(),
-        lastUpdated: new Date().toISOString()
-      });
-    }
-  }
-  
-  // Convert map to array
-  resourceMap.forEach(resource => resources.push(resource));
-  
-  return resources;
-}
-
-/**
- * Determine the current deployment phase based on progress logs
- */
-function determineDeploymentPhase(logs: string[]): string {
-  // Check logs in reverse order (most recent first)
-  for (let i = logs.length - 1; i >= 0; i--) {
-    const log = logs[i].toLowerCase();
-    
-    if (log.includes("uploading frontend assets")) {
-      return "Uploading frontend assets";
-    } else if (log.includes("retrieving deployment outputs")) {
-      return "Retrieving deployment outputs";
-    } else if (log.includes("deploying application")) {
-      return "Deploying application";
-    } else if (log.includes("building application")) {
-      return "Building application";
-    } else if (log.includes("starting aws sam deployment")) {
-      return "Starting AWS SAM deployment";
-    } else if (log.includes("preparing deployment files")) {
-      return "Preparing deployment files";
-    }
-  }
-  
-  return "Initializing deployment";
-}
-
-/**
- * Estimate completion percentage based on progress logs
- */
-function estimateCompletion(logs: string[]): number {
-  // Check for CloudFront distribution creation which is typically the longest part
-  const hasCloudfrontDistribution = logs.some(log => 
-    log.includes("CloudFrontDistribution") && log.includes("CREATE_IN_PROGRESS")
-  );
-  
-  // Check for completed resources
-  const completedResources = logs.filter(log => log.includes("CREATE_COMPLETE")).length;
-  const totalExpectedResources = hasCloudfrontDistribution ? 4 : 2; // Rough estimate
-  
-  // Check deployment phases
-  for (let i = logs.length - 1; i >= 0; i--) {
-    const log = logs[i].toLowerCase();
-    
-    if (log.includes("completed successfully")) {
-      return 100;
-    } else if (log.includes("uploading frontend assets")) {
-      return 90;
-    } else if (log.includes("retrieving deployment outputs")) {
-      return 80;
-    } else if (log.includes("deploying application")) {
-      // For CloudFront, this can take a long time
-      if (hasCloudfrontDistribution) {
-        // If CloudFront is involved, base progress on resource completion
-        return Math.min(60 + (completedResources / totalExpectedResources) * 20, 79);
-      }
-      return 60;
-    } else if (log.includes("building application")) {
-      return 40;
-    } else if (log.includes("starting aws sam deployment")) {
-      return 30;
-    } else if (log.includes("preparing deployment files")) {
-      return 20;
-    }
-  }
-  
-  return 10; // Default starting percentage
-}
-
-/**
- * List all deployments
- */
-export async function listDeployments(): Promise<any[]> {
+export async function listDeployments(
+  limit?: number,
+  sortBy: string = 'timestamp',
+  sortOrder: 'asc' | 'desc' = 'desc'
+): Promise<any[]> {
   try {
-    console.log(`Listing deployments from directory: ${DEPLOYMENT_STATUS_DIR}`);
-    const files = fs.readdirSync(DEPLOYMENT_STATUS_DIR);
-    console.log(`Found files: ${files.join(', ')}`);
+    logger.info(`Listing deployments from directory: ${DEPLOYMENT_METADATA_DIR}`);
     
+    // Create directory if it doesn't exist
+    try {
+      await fs.promises.mkdir(DEPLOYMENT_METADATA_DIR, { recursive: true });
+    } catch (error) {
+      // Ignore error if directory already exists
+    }
+    
+    // Get all metadata files
+    let files: string[];
+    try {
+      files = await fs.promises.readdir(DEPLOYMENT_METADATA_DIR);
+    } catch (error) {
+      logger.error(`Error reading deployment directory:`, error);
+      return [];
+    }
+    
+    // Filter to only include metadata files
+    const metadataFiles = files.filter(file => file.endsWith('.json'));
+    
+    logger.info(`Found ${metadataFiles.length} deployment metadata files`);
+    
+    // Process deployments with a timeout
     const deployments: any[] = [];
     
-    // Process each JSON status file
-    for (const file of files) {
-      if (file.endsWith('.json') && !file.includes('-progress')) {
-        const projectName = file.replace('.json', '');
+    // Process files in batches to avoid overwhelming the system
+    const batchSize = 5;
+    for (let i = 0; i < metadataFiles.length; i += batchSize) {
+      const batch = metadataFiles.slice(i, i + batchSize);
+      const batchPromises = batch.map(async (file) => {
         try {
-          console.log(`Processing deployment: ${projectName}`);
+          const projectName = path.basename(file, '.json');
           const status = await getDeploymentStatus(projectName);
-          deployments.push({
-            projectName,
-            ...status
-          });
+          return status;
         } catch (error) {
-          console.error(`Error processing deployment ${projectName}:`, error);
+          logger.error(`Error processing deployment ${file}:`, error);
+          return null;
         }
+      });
+      
+      const batchResults = await Promise.all(batchPromises);
+      deployments.push(...batchResults.filter(Boolean));
+      
+      // Apply limit if specified
+      if (limit && deployments.length >= limit) {
+        deployments.splice(limit);
+        break;
       }
     }
     
-    console.log(`Returning ${deployments.length} deployments`);
+    // Sort deployments
+    deployments.sort((a, b) => {
+      const valueA = a[sortBy];
+      const valueB = b[sortBy];
+      
+      if (valueA < valueB) return sortOrder === 'asc' ? -1 : 1;
+      if (valueA > valueB) return sortOrder === 'asc' ? 1 : -1;
+      return 0;
+    });
+    
     return deployments;
   } catch (error) {
-    console.error('Failed to list deployments:', error);
-    return [];
+    logger.error(`Failed to list deployments:`, error);
+    throw error;
   }
 }

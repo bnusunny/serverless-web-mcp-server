@@ -1,0 +1,127 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: {{description}}
+
+Resources:
+  # API Gateway
+  ApiGateway:
+    Type: AWS::Serverless::Api
+    Properties:
+      StageName: {{backendConfiguration.stage}}
+      {{#ifEquals backendConfiguration.cors true}}
+      Cors:
+        AllowMethods: "'GET,POST,PUT,DELETE,OPTIONS'"
+        AllowHeaders: "'Content-Type,Authorization,X-Amz-Date,X-Api-Key,X-Amz-Security-Token'"
+        AllowOrigin: "'*'"
+      {{/ifEquals}}
+
+  # Lambda Function with Web Adapter
+  ApiFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ./src/
+      Handler: bootstrap
+      Runtime: {{backendConfiguration.runtime}}
+      MemorySize: {{backendConfiguration.memorySize}}
+      Timeout: {{backendConfiguration.timeout}}
+      Architectures:
+        - {{backendConfiguration.architecture}}
+      Environment:
+        Variables:
+          PORT: 8080
+          AWS_LAMBDA_EXEC_WRAPPER: /opt/bootstrap
+          {{#ifEquals backendConfiguration.framework "express"}}
+          # Express.js specific environment variables
+          NODE_OPTIONS: --enable-source-maps
+          {{#ifExists backendConfiguration.entryPoint}}
+          APP_ENTRY: {{backendConfiguration.entryPoint}}
+          {{/ifExists}}
+          {{/ifEquals}}
+          {{#ifEquals backendConfiguration.framework "nodejs"}}
+          # Node.js specific environment variables
+          NODE_OPTIONS: --enable-source-maps
+          {{#ifExists backendConfiguration.entryPoint}}
+          APP_ENTRY: {{backendConfiguration.entryPoint}}
+          {{/ifExists}}
+          {{/ifEquals}}
+          {{#ifEquals backendConfiguration.framework "flask"}}
+          # Flask specific environment variables
+          {{#ifExists backendConfiguration.entryPoint}}
+          FLASK_APP: {{backendConfiguration.entryPoint}}
+          {{else}}
+          FLASK_APP: app.py
+          {{/ifExists}}
+          {{/ifEquals}}
+          {{#ifEquals backendConfiguration.framework "fastapi"}}
+          # FastAPI specific environment variables
+          {{#ifExists backendConfiguration.entryPoint}}
+          APP_MODULE: {{backendConfiguration.entryPoint}}
+          {{else}}
+          APP_MODULE: main:app
+          {{/ifExists}}
+          {{/ifEquals}}
+          {{#eachInObject backendConfiguration.environment}}
+          {{key}}: {{value}}
+          {{/eachInObject}}
+      Layers:
+        {{#ifEquals backendConfiguration.architecture "arm64"}}
+        - !Sub "arn:aws:lambda:${AWS::Region}:753240598075:layer:LambdaAdapterLayerArm64:24"
+        {{else}}
+        - !Sub "arn:aws:lambda:${AWS::Region}:753240598075:layer:LambdaAdapterLayerX86:24"
+        {{/ifEquals}}
+      Events:
+        ApiEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /{proxy+}
+            Method: ANY
+        RootApiEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /
+            Method: ANY
+
+  {{#ifExists databaseConfiguration}}
+  # DynamoDB Table
+  {{databaseConfiguration.tableName}}Table:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: {{databaseConfiguration.tableName}}
+      BillingMode: {{#ifEquals databaseConfiguration.billingMode "PROVISIONED"}}PROVISIONED{{else}}PAY_PER_REQUEST{{/ifEquals}}
+      AttributeDefinitions:
+        {{#each databaseConfiguration.attributeDefinitions}}
+        - AttributeName: {{name}}
+          AttributeType: {{type}}
+        {{/each}}
+      KeySchema:
+        {{#each databaseConfiguration.keySchema}}
+        - AttributeName: {{name}}
+          KeyType: {{type}}
+        {{/each}}
+      {{#ifEquals databaseConfiguration.billingMode "PROVISIONED"}}
+      ProvisionedThroughput:
+        ReadCapacityUnits: {{databaseConfiguration.readCapacity}}
+        WriteCapacityUnits: {{databaseConfiguration.writeCapacity}}
+      {{/ifEquals}}
+  {{/ifExists}}
+
+Outputs:
+  ApiEndpoint:
+    Description: API Gateway endpoint URL
+    Value: !Sub "https://${ApiGateway}.execute-api.${AWS::Region}.amazonaws.com/{{backendConfiguration.stage}}/"
+  
+  FunctionArn:
+    Description: Lambda function ARN
+    Value: !GetAtt ApiFunction.Arn
+  
+  FunctionName:
+    Description: Lambda function name
+    Value: !Ref ApiFunction
+  
+  {{#ifExists databaseConfiguration}}
+  TableName:
+    Description: Name of the DynamoDB table
+    Value: !Ref {{databaseConfiguration.tableName}}Table
+  {{/ifExists}}

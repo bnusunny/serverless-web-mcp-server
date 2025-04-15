@@ -1,0 +1,314 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: {{description}}
+
+Resources:
+  # API Gateway
+  ApiGateway:
+    Type: AWS::Serverless::Api
+    Properties:
+      StageName: {{backendConfiguration.stage}}
+      {{#ifEquals backendConfiguration.cors true}}
+      Cors:
+        AllowMethods: "'GET,POST,PUT,DELETE,OPTIONS'"
+        AllowHeaders: "'Content-Type,Authorization,X-Amz-Date,X-Api-Key,X-Amz-Security-Token'"
+        AllowOrigin: "'*'"
+      {{/ifEquals}}
+
+  # Lambda Function with Web Adapter
+  ApiFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ./src/backend/
+      Handler: bootstrap
+      Runtime: {{backendConfiguration.runtime}}
+      MemorySize: {{backendConfiguration.memorySize}}
+      Timeout: {{backendConfiguration.timeout}}
+      Architectures:
+        - {{backendConfiguration.architecture}}
+      Environment:
+        Variables:
+          PORT: 8080
+          AWS_LAMBDA_EXEC_WRAPPER: /opt/bootstrap
+          {{#ifEquals backendConfiguration.framework "express"}}
+          # Express.js specific environment variables
+          NODE_OPTIONS: --enable-source-maps
+          {{#ifExists backendConfiguration.entryPoint}}
+          APP_ENTRY: {{backendConfiguration.entryPoint}}
+          {{/ifExists}}
+          {{/ifEquals}}
+          {{#ifEquals backendConfiguration.framework "nodejs"}}
+          # Node.js specific environment variables
+          NODE_OPTIONS: --enable-source-maps
+          {{#ifExists backendConfiguration.entryPoint}}
+          APP_ENTRY: {{backendConfiguration.entryPoint}}
+          {{/ifExists}}
+          {{/ifEquals}}
+          {{#ifEquals backendConfiguration.framework "flask"}}
+          # Flask specific environment variables
+          {{#ifExists backendConfiguration.entryPoint}}
+          FLASK_APP: {{backendConfiguration.entryPoint}}
+          {{else}}
+          FLASK_APP: app.py
+          {{/ifExists}}
+          {{/ifEquals}}
+          {{#ifEquals backendConfiguration.framework "fastapi"}}
+          # FastAPI specific environment variables
+          {{#ifExists backendConfiguration.entryPoint}}
+          APP_MODULE: {{backendConfiguration.entryPoint}}
+          {{else}}
+          APP_MODULE: main:app
+          {{/ifExists}}
+          {{/ifEquals}}
+          {{#ifEquals backendConfiguration.framework "nextjs"}}
+          # Next.js specific environment variables
+          NODE_OPTIONS: --enable-source-maps
+          {{#ifExists backendConfiguration.entryPoint}}
+          APP_ENTRY: {{backendConfiguration.entryPoint}}
+          {{/ifExists}}
+          {{/ifEquals}}
+          {{#eachInObject backendConfiguration.environment}}
+          {{key}}: {{value}}
+          {{/eachInObject}}
+          {{#ifExists databaseConfiguration}}
+          TABLE_NAME: {{databaseConfiguration.tableName}}
+          {{/ifExists}}
+      Layers:
+        {{#ifEquals backendConfiguration.architecture "arm64"}}
+        - !Sub "arn:aws:lambda:${AWS::Region}:753240598075:layer:LambdaAdapterLayerArm64:24"
+        {{else}}
+        - !Sub "arn:aws:lambda:${AWS::Region}:753240598075:layer:LambdaAdapterLayerX86:24"
+        {{/ifEquals}}
+      Events:
+        ApiEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /api/{proxy+}
+            Method: ANY
+        RootApiEvent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /api
+            Method: ANY
+
+  # S3 bucket for website content
+  WebsiteBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      AccessControl: Private
+      # No WebsiteConfiguration since we're using CloudFront with OAC
+      CorsConfiguration:
+        CorsRules:
+          - AllowedHeaders:
+              - '*'
+            AllowedMethods:
+              - GET
+              - HEAD
+            AllowedOrigins:
+              - '*'
+            MaxAge: 3000
+
+  # CloudFront Origin Access Control
+  CloudFrontOriginAccessControl:
+    Type: AWS::CloudFront::OriginAccessControl
+    Properties:
+      OriginAccessControlConfig:
+        Name: !Sub "${AWS::StackName}-oac"
+        OriginAccessControlOriginType: s3
+        SigningBehavior: always
+        SigningProtocol: sigv4
+
+  # Bucket policy for CloudFront access
+  WebsiteBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref WebsiteBucket
+      PolicyDocument:
+        Statement:
+          - Action: s3:GetObject
+            Effect: Allow
+            Resource: !Sub "arn:aws:s3:::${WebsiteBucket}/*"
+            Principal:
+              Service: cloudfront.amazonaws.com
+            Condition:
+              StringEquals:
+                AWS:SourceArn: !Sub "arn:aws:cloudfront::${AWS::AccountId}:distribution/${WebsiteDistribution}"
+
+  # CloudFront distribution
+  WebsiteDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        DefaultRootObject: {{frontendConfiguration.indexDocument}}
+        Origins:
+          - DomainName: !GetAtt WebsiteBucket.RegionalDomainName
+            Id: S3Origin
+            OriginAccessControlId: !GetAtt CloudFrontOriginAccessControl.Id
+            S3OriginConfig:
+              OriginAccessIdentity: ""
+          - DomainName: !Sub "${ApiGateway}.execute-api.${AWS::Region}.amazonaws.com"
+            Id: ApiOrigin
+            OriginPath: "/{{backendConfiguration.stage}}"
+            CustomOriginConfig:
+              OriginProtocolPolicy: https-only
+              OriginSSLProtocols: [TLSv1.2]
+        DefaultCacheBehavior:
+          TargetOriginId: S3Origin
+          ViewerProtocolPolicy: redirect-to-https
+          AllowedMethods: [GET, HEAD, OPTIONS]
+          CachedMethods: [GET, HEAD]
+          ForwardedValues:
+            QueryString: false
+            Cookies:
+              Forward: none
+          # SPA routing support
+          FunctionAssociations:
+            - EventType: viewer-request
+              FunctionARN: !GetAtt RouterFunction.FunctionARN
+        CacheBehaviors:
+          - PathPattern: "/api/*"
+            TargetOriginId: ApiOrigin
+            ViewerProtocolPolicy: https-only
+            AllowedMethods: [GET, HEAD, OPTIONS, PUT, POST, PATCH, DELETE]
+            CachedMethods: [GET, HEAD]
+            ForwardedValues:
+              QueryString: true
+              Headers: ["Authorization"]
+              Cookies:
+                Forward: all
+          {{#ifEquals frontendConfiguration.type "nextjs"}}
+          # Next.js specific cache behavior for static assets
+          - PathPattern: "/_next/static/*"
+            TargetOriginId: S3Origin
+            ViewerProtocolPolicy: redirect-to-https
+            AllowedMethods: [GET, HEAD, OPTIONS]
+            CachedMethods: [GET, HEAD]
+            ForwardedValues:
+              QueryString: false
+              Cookies:
+                Forward: none
+            Compress: true
+            DefaultTTL: 86400
+            MaxTTL: 31536000
+          {{/ifEquals}}
+        PriceClass: PriceClass_100
+        CustomErrorResponses:
+          - ErrorCode: 404
+            ResponseCode: 200
+            ResponsePagePath: !Sub "/${frontendConfiguration.indexDocument}"
+          - ErrorCode: 403
+            ResponseCode: 200
+            ResponsePagePath: !Sub "/${frontendConfiguration.indexDocument}"
+        {{#ifExists frontendConfiguration.customDomain}}
+        Aliases:
+          - {{frontendConfiguration.customDomain}}
+        ViewerCertificate:
+          AcmCertificateArn: {{frontendConfiguration.certificateArn}}
+          SslSupportMethod: sni-only
+        {{else}}
+        ViewerCertificate:
+          CloudFrontDefaultCertificate: true
+        {{/ifExists}}
+
+  # CloudFront Function for routing
+  RouterFunction:
+    Type: AWS::CloudFront::Function
+    Properties:
+      Name: !Sub "${AWS::StackName}-router-function"
+      AutoPublish: true
+      FunctionCode: |
+        function handler(event) {
+          var request = event.request;
+          var uri = request.uri;
+          
+          // Don't rewrite API requests
+          if (uri.startsWith('/api/')) {
+            return request;
+          }
+          
+          {{#ifEquals frontendConfiguration.type "nextjs"}}
+          // Next.js specific routing
+          if (uri.startsWith('/_next/') || uri.includes('.')) {
+            return request;
+          }
+          {{else}}
+          // Standard SPA routing
+          if (uri.includes('.')) {
+            return request;
+          }
+          {{/ifEquals}}
+          
+          {{#ifEquals frontendConfiguration.type "react"}}
+          // React Router handling
+          {{/ifEquals}}
+          {{#ifEquals frontendConfiguration.type "vue"}}
+          // Vue Router history mode handling
+          {{/ifEquals}}
+          {{#ifEquals frontendConfiguration.type "angular"}}
+          // Angular routing handling
+          {{/ifEquals}}
+          
+          // Rewrite to index.html for SPA routing
+          request.uri = '/index.html';
+          
+          return request;
+        }
+      FunctionConfig:
+        Comment: "Rewrite requests for frontend routing"
+        Runtime: cloudfront-js-1.0
+
+  {{#ifExists databaseConfiguration}}
+  # DynamoDB Table
+  {{databaseConfiguration.tableName}}Table:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: {{databaseConfiguration.tableName}}
+      BillingMode: {{#ifEquals databaseConfiguration.billingMode "PROVISIONED"}}PROVISIONED{{else}}PAY_PER_REQUEST{{/ifEquals}}
+      AttributeDefinitions:
+        {{#each databaseConfiguration.attributeDefinitions}}
+        - AttributeName: {{name}}
+          AttributeType: {{type}}
+        {{/each}}
+      KeySchema:
+        {{#each databaseConfiguration.keySchema}}
+        - AttributeName: {{name}}
+          KeyType: {{type}}
+        {{/each}}
+      {{#ifEquals databaseConfiguration.billingMode "PROVISIONED"}}
+      ProvisionedThroughput:
+        ReadCapacityUnits: {{databaseConfiguration.readCapacity}}
+        WriteCapacityUnits: {{databaseConfiguration.writeCapacity}}
+      {{/ifEquals}}
+  {{/ifExists}}
+
+Outputs:
+  ApiEndpoint:
+    Description: API Gateway endpoint URL
+    Value: !Sub "https://${ApiGateway}.execute-api.${AWS::Region}.amazonaws.com/{{backendConfiguration.stage}}/"
+  
+  WebsiteBucket:
+    Description: S3 bucket for website content
+    Value: !Ref WebsiteBucket
+  
+  CloudFrontURL:
+    Description: CloudFront distribution URL
+    Value: !Sub "https://${WebsiteDistribution.DomainName}"
+  
+  CloudFrontDistributionId:
+    Description: CloudFront distribution ID
+    Value: !Ref WebsiteDistribution
+  
+  {{#ifExists frontendConfiguration.customDomain}}
+  CustomDomainURL:
+    Description: Custom domain URL
+    Value: !Sub "https://{{frontendConfiguration.customDomain}}"
+  {{/ifExists}}
+  
+  {{#ifExists databaseConfiguration}}
+  TableName:
+    Description: Name of the DynamoDB table
+    Value: !Ref {{databaseConfiguration.tableName}}Table
+  {{/ifExists}}
