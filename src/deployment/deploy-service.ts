@@ -186,8 +186,10 @@ async function buildAndDeployApplication(
  */
 async function runSamBuild(deploymentDir: string, projectName: string): Promise<void> {
   return new Promise<void>((resolve, reject) => {
+    logger.info(`Starting SAM build for ${projectName} in ${deploymentDir}`);
+    
     // Create the build process
-    const buildProcess = spawn('sam', ['build'], {
+    const buildProcess = spawn('sam', ['build', '--debug'], {
       cwd: deploymentDir,
       stdio: 'pipe',
       shell: true // Use shell for cross-platform compatibility
@@ -213,14 +215,17 @@ async function runSamBuild(deploymentDir: string, projectName: string): Promise<
     // Handle process completion
     buildProcess.on('close', (code) => {
       if (code === 0) {
+        logger.info(`SAM build completed successfully for ${projectName}`);
         resolve();
       } else {
+        logger.error(`SAM build failed with code ${code} for ${projectName}`);
         reject(new Error(`SAM build failed with code ${code}: ${buildError}`));
       }
     });
     
     // Handle process errors
     buildProcess.on('error', (error) => {
+      logger.error(`Failed to start SAM build for ${projectName}: ${error.message}`);
       reject(new Error(`Failed to start SAM build: ${error.message}`));
     });
   });
@@ -237,13 +242,16 @@ async function runSamDeploy(
   configuration: DeploymentConfiguration
 ): Promise<void> {
   return new Promise<void>((resolve, reject) => {
+    logger.info(`Starting SAM deploy for ${configuration.projectName} in ${deploymentDir}`);
+    
     // Create the deploy process
     const deployProcess = spawn('sam', [
       'deploy',
       '--stack-name', configuration.projectName,
       '--capabilities', 'CAPABILITY_IAM',
       '--no-confirm-changeset',
-      '--no-fail-on-empty-changeset'
+      '--no-fail-on-empty-changeset',
+      '--debug'
     ], {
       cwd: deploymentDir,
       stdio: 'pipe',
@@ -270,14 +278,17 @@ async function runSamDeploy(
     // Handle process completion
     deployProcess.on('close', (code) => {
       if (code === 0) {
+        logger.info(`SAM deploy completed successfully for ${configuration.projectName}`);
         resolve();
       } else {
+        logger.error(`SAM deploy failed with code ${code} for ${configuration.projectName}`);
         reject(new Error(`SAM deploy failed with code ${code}: ${deployError}`));
       }
     });
     
     // Handle process errors
     deployProcess.on('error', (error) => {
+      logger.error(`Failed to start SAM deploy for ${configuration.projectName}: ${error.message}`);
       reject(new Error(`Failed to start SAM deploy: ${error.message}`));
     });
   });

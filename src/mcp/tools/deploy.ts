@@ -75,6 +75,19 @@ async function handleDeploy(params: DeployToolParams): Promise<any> {
       params.configuration.backendConfiguration.entryPoint = params.entryPoint;
     }
     
+    // Add default backend configuration if not provided
+    if ((params.deploymentType === 'backend' || params.deploymentType === 'fullstack') && 
+        !params.configuration.backendConfiguration) {
+      params.configuration.backendConfiguration = {
+        runtime: 'nodejs18.x',
+        memorySize: 512,
+        timeout: 30,
+        architecture: 'x86_64',
+        stage: 'prod',
+        cors: true
+      };
+    }
+    
     // Deploy application
     const result = await deploy(params);
     
