@@ -27,7 +27,12 @@ if (!fs.existsSync(DEPLOYMENT_STATUS_DIR)) {
  */
 async function handleDeploymentDetails(uri: URL, variables?: Record<string, string>): Promise<any> {
   if (!variables || !variables.projectName) {
-    return undefined;
+    return {
+      contents: null,
+      metadata: {
+        error: "Missing project name"
+      }
+    };
   }
   
   const projectName = variables.projectName;
@@ -39,19 +44,39 @@ async function handleDeploymentDetails(uri: URL, variables?: Record<string, stri
     try {
       // Read deployment status from file
       const statusData = fs.readFileSync(statusFilePath, 'utf8');
-      return JSON.parse(statusData);
+      const deploymentDetails = JSON.parse(statusData);
+      
+      // Return in the format expected by MCP protocol
+      return {
+        contents: deploymentDetails,
+        metadata: {
+          projectName
+        }
+      };
     } catch (error) {
       logger.error(`Error reading deployment status for ${projectName}:`, error);
+      return {
+        contents: null,
+        metadata: {
+          projectName,
+          error: `Error reading deployment status: ${error instanceof Error ? error.message : String(error)}`
+        }
+      };
     }
   }
   
-  // If no status file exists or there was an error reading it,
-  // return a placeholder response
+  // If no status file exists, return a placeholder response
   return {
-    projectName,
-    status: 'unknown',
-    message: 'Deployment status not found',
-    lastUpdated: new Date().toISOString()
+    contents: {
+      projectName,
+      status: 'unknown',
+      message: 'Deployment status not found',
+      lastUpdated: new Date().toISOString()
+    },
+    metadata: {
+      projectName,
+      warning: 'Deployment status not found'
+    }
   };
 }
 
