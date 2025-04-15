@@ -19,6 +19,12 @@ async function handleGetLogs(params: any): Promise<any> {
     // Validate required parameters
     if (!params.projectName) {
       return {
+        content: [
+          {
+            type: 'text',
+            text: 'Missing required parameter: projectName'
+          }
+        ],
         status: 'error',
         message: 'Missing required parameter: projectName'
       };
@@ -30,20 +36,57 @@ async function handleGetLogs(params: any): Promise<any> {
     // 2. Fetching logs from CloudWatch
     // 3. Formatting and returning the logs
     
-    // For now, return a placeholder result
+    // For now, return a placeholder result with sample logs
+    const logEntries = [
+      {
+        timestamp: new Date().toISOString(),
+        message: 'INFO: Application started'
+      },
+      {
+        timestamp: new Date(Date.now() - 5000).toISOString(),
+        message: 'INFO: Request received: GET /api/items'
+      },
+      {
+        timestamp: new Date(Date.now() - 4000).toISOString(),
+        message: 'DEBUG: Fetching items from database'
+      },
+      {
+        timestamp: new Date(Date.now() - 3000).toISOString(),
+        message: 'INFO: Retrieved 10 items'
+      },
+      {
+        timestamp: new Date(Date.now() - 2000).toISOString(),
+        message: 'INFO: Request completed in 120ms'
+      }
+    ];
+    
+    // Format logs as content items
+    const contentItems = logEntries.map(log => ({
+      type: 'text',
+      text: `[${log.timestamp}] ${log.message}`
+    }));
+    
+    // Add header
+    contentItems.unshift({
+      type: 'text',
+      text: `Logs for project ${params.projectName}:`
+    });
+    
     return {
+      content: contentItems,
       status: 'success',
       message: `Retrieved logs for project ${params.projectName}`,
-      logs: [
-        {
-          timestamp: new Date().toISOString(),
-          message: 'This is a placeholder log message. Actual logs would be retrieved from CloudWatch.'
-        }
-      ]
+      logs: logEntries
     };
   } catch (error) {
     logger.error('Get logs tool error:', error);
     return {
+      content: [
+        {
+          type: 'text',
+          text: `Failed to retrieve logs: ${error instanceof Error ? error.message : String(error)}`
+        }
+      ],
       status: 'error',
       message: `Failed to retrieve logs: ${error instanceof Error ? error.message : String(error)}`
     };

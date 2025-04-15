@@ -19,6 +19,12 @@ async function handleConfigureDomain(params: any): Promise<any> {
     // Validate required parameters
     if (!params.projectName) {
       return {
+        content: [
+          {
+            type: 'text',
+            text: 'Missing required parameter: projectName'
+          }
+        ],
         status: 'error',
         message: 'Missing required parameter: projectName'
       };
@@ -26,6 +32,12 @@ async function handleConfigureDomain(params: any): Promise<any> {
     
     if (!params.domainName) {
       return {
+        content: [
+          {
+            type: 'text',
+            text: 'Missing required parameter: domainName'
+          }
+        ],
         status: 'error',
         message: 'Missing required parameter: domainName'
       };
@@ -39,6 +51,16 @@ async function handleConfigureDomain(params: any): Promise<any> {
     
     // For now, return a placeholder result
     return {
+      content: [
+        {
+          type: 'text',
+          text: `Domain ${params.domainName} configured for project ${params.projectName}`
+        },
+        {
+          type: 'text',
+          text: `Certificate ARN: arn:aws:acm:us-east-1:123456789012:certificate/example`
+        }
+      ],
       status: 'success',
       message: `Domain ${params.domainName} configured for project ${params.projectName}`,
       outputs: {
@@ -49,6 +71,12 @@ async function handleConfigureDomain(params: any): Promise<any> {
   } catch (error) {
     logger.error('Configure domain tool error:', error);
     return {
+      content: [
+        {
+          type: 'text',
+          text: `Domain configuration failed: ${error instanceof Error ? error.message : String(error)}`
+        }
+      ],
       status: 'error',
       message: `Domain configuration failed: ${error instanceof Error ? error.message : String(error)}`
     };

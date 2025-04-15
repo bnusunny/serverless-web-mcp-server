@@ -19,6 +19,12 @@ async function handleProvisionDatabase(params: any): Promise<any> {
     // Validate required parameters
     if (!params.projectName) {
       return {
+        content: [
+          {
+            type: 'text',
+            text: 'Missing required parameter: projectName'
+          }
+        ],
         status: 'error',
         message: 'Missing required parameter: projectName'
       };
@@ -26,6 +32,12 @@ async function handleProvisionDatabase(params: any): Promise<any> {
     
     if (!params.databaseType) {
       return {
+        content: [
+          {
+            type: 'text',
+            text: 'Missing required parameter: databaseType'
+          }
+        ],
         status: 'error',
         message: 'Missing required parameter: databaseType'
       };
@@ -35,6 +47,12 @@ async function handleProvisionDatabase(params: any): Promise<any> {
     if (params.databaseType === 'dynamodb') {
       if (!params.tableName) {
         return {
+          content: [
+            {
+              type: 'text',
+              text: 'Missing required parameter for DynamoDB: tableName'
+            }
+          ],
           status: 'error',
           message: 'Missing required parameter for DynamoDB: tableName'
         };
@@ -42,6 +60,12 @@ async function handleProvisionDatabase(params: any): Promise<any> {
       
       if (!params.attributeDefinitions || params.attributeDefinitions.length === 0) {
         return {
+          content: [
+            {
+              type: 'text',
+              text: 'Missing required parameter for DynamoDB: attributeDefinitions'
+            }
+          ],
           status: 'error',
           message: 'Missing required parameter for DynamoDB: attributeDefinitions'
         };
@@ -49,6 +73,12 @@ async function handleProvisionDatabase(params: any): Promise<any> {
       
       if (!params.keySchema || params.keySchema.length === 0) {
         return {
+          content: [
+            {
+              type: 'text',
+              text: 'Missing required parameter for DynamoDB: keySchema'
+            }
+          ],
           status: 'error',
           message: 'Missing required parameter for DynamoDB: keySchema'
         };
@@ -56,6 +86,12 @@ async function handleProvisionDatabase(params: any): Promise<any> {
     } else if (params.databaseType === 'aurora-serverless') {
       if (!params.databaseName) {
         return {
+          content: [
+            {
+              type: 'text',
+              text: 'Missing required parameter for Aurora Serverless: databaseName'
+            }
+          ],
           status: 'error',
           message: 'Missing required parameter for Aurora Serverless: databaseName'
         };
@@ -69,7 +105,27 @@ async function handleProvisionDatabase(params: any): Promise<any> {
     // 3. Returning connection information
     
     // For now, return a placeholder result
+    const contentItems = [
+      {
+        type: 'text',
+        text: `Database provisioned for project ${params.projectName}`
+      },
+      {
+        type: 'text',
+        text: `Database type: ${params.databaseType}`
+      },
+      {
+        type: 'text',
+        text: `Resource name: ${params.databaseType === 'dynamodb' ? params.tableName : params.databaseName}`
+      },
+      {
+        type: 'text',
+        text: 'Connection information would be provided here'
+      }
+    ];
+    
     return {
+      content: contentItems,
       status: 'success',
       message: `Database provisioned for project ${params.projectName}`,
       outputs: {
@@ -81,6 +137,12 @@ async function handleProvisionDatabase(params: any): Promise<any> {
   } catch (error) {
     logger.error('Provision database tool error:', error);
     return {
+      content: [
+        {
+          type: 'text',
+          text: `Database provisioning failed: ${error instanceof Error ? error.message : String(error)}`
+        }
+      ],
       status: 'error',
       message: `Database provisioning failed: ${error instanceof Error ? error.message : String(error)}`
     };
