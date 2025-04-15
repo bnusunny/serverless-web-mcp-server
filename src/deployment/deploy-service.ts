@@ -18,6 +18,7 @@ import {
 } from '../types/index.js';
 import * as os from 'os';
 import { copyDirectory } from '../utils/fs-utils.js';
+import { logger } from '../utils/logger.js';
 
 const execAsync = promisify(exec);
 const mkdirAsync = promisify(fs.mkdir);
@@ -84,7 +85,7 @@ export async function deploy(options: DeployOptions): Promise<DeployResult> {
     setTimeout(() => {
       buildAndDeployApplication(deploymentDir, configuration)
         .catch((error: Error) => {
-          console.error('Build and deployment error:', error);
+          logger.error('Build and deployment error:', error);
           updateDeploymentStatus(configuration.projectName, {
             status: 'error',
             message: `Build and deployment error: ${error.message}`,
@@ -100,7 +101,7 @@ export async function deploy(options: DeployOptions): Promise<DeployResult> {
       stackName: configuration.projectName
     };
   } catch (error) {
-    console.error('Deployment failed:', error);
+    logger.error('Deployment failed:', error);
     
     // Update deployment status
     updateDeploymentStatus(configuration.projectName, {
@@ -195,14 +196,14 @@ async function runSamBuild(deploymentDir: string, projectName: string): Promise<
     buildProcess.stdout?.on('data', (data) => {
       const output = data.toString();
       buildOutput += output;
-      console.log(`[${projectName} build] ${output.trim()}`);
+      logger.info(`[${projectName} build] ${output.trim()}`);
     });
     
     // Capture stderr
     buildProcess.stderr?.on('data', (data) => {
       const output = data.toString();
       buildError += output;
-      console.error(`[${projectName} build error] ${output.trim()}`);
+      logger.error(`[${projectName} build error] ${output.trim()}`);
     });
     
     // Handle process completion
@@ -252,14 +253,14 @@ async function runSamDeploy(
     deployProcess.stdout?.on('data', (data) => {
       const output = data.toString();
       deployOutput += output;
-      console.log(`[${configuration.projectName} deploy] ${output.trim()}`);
+      logger.info(`[${configuration.projectName} deploy] ${output.trim()}`);
     });
     
     // Capture stderr
     deployProcess.stderr?.on('data', (data) => {
       const output = data.toString();
       deployError += output;
-      console.error(`[${configuration.projectName} deploy error] ${output.trim()}`);
+      logger.error(`[${configuration.projectName} deploy error] ${output.trim()}`);
     });
     
     // Handle process completion
@@ -303,7 +304,7 @@ async function getStackOutputs(stackName: string): Promise<Record<string, string
     
     return formattedOutputs;
   } catch (error: any) {
-    console.error(`Error getting stack outputs for ${stackName}:`, error);
+    logger.error(`Error getting stack outputs for ${stackName}:`, error);
     return {};
   }
 }
