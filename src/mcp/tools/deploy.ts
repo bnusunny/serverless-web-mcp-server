@@ -18,8 +18,12 @@ import { logger } from '../../utils/logger.js';
  */
 async function handleDeploy(params: DeployToolParams): Promise<any> {
   try {
+    logger.info(`[DEPLOY TOOL START] Received deploy request for ${params.configuration?.projectName || 'unknown project'}`);
+    logger.info(`Deploy parameters: ${JSON.stringify(params, null, 2)}`);
+    
     // Validate required parameters
     if (!params.deploymentType) {
+      logger.error('Missing required parameter: deploymentType');
       return {
         content: [],
         status: 'error',
@@ -28,6 +32,7 @@ async function handleDeploy(params: DeployToolParams): Promise<any> {
     }
     
     if (!params.source || !params.source.path) {
+      logger.error('Missing required parameter: source.path');
       return {
         content: [],
         status: 'error',
@@ -36,6 +41,7 @@ async function handleDeploy(params: DeployToolParams): Promise<any> {
     }
     
     if (!params.configuration || !params.configuration.projectName) {
+      logger.error('Missing required parameter: configuration.projectName');
       return {
         content: [],
         status: 'error',
@@ -45,6 +51,7 @@ async function handleDeploy(params: DeployToolParams): Promise<any> {
     
     // Prompt for framework if not provided
     if (!params.framework && !params.configuration.backendConfiguration?.framework) {
+      logger.info('Framework not provided, requesting input');
       return {
         content: [],
         status: 'needs_input',
@@ -56,6 +63,7 @@ async function handleDeploy(params: DeployToolParams): Promise<any> {
     // Prompt for entry point if not provided
     if ((params.deploymentType === 'backend' || params.deploymentType === 'fullstack') && 
         !params.configuration.backendConfiguration?.entryPoint) {
+      logger.info('Entry point not provided, requesting input');
       return {
         content: [],
         status: 'needs_input',
@@ -67,17 +75,20 @@ async function handleDeploy(params: DeployToolParams): Promise<any> {
     
     // Set framework in configuration if provided as top-level parameter
     if (params.framework && params.configuration.backendConfiguration) {
+      logger.info(`Setting framework in configuration: ${params.framework}`);
       params.configuration.backendConfiguration.framework = params.framework;
     }
     
     // Set entry point in configuration if provided as input
     if (params.entryPoint && params.configuration.backendConfiguration) {
+      logger.info(`Setting entry point in configuration: ${params.entryPoint}`);
       params.configuration.backendConfiguration.entryPoint = params.entryPoint;
     }
     
     // Add default backend configuration if not provided
     if ((params.deploymentType === 'backend' || params.deploymentType === 'fullstack') && 
         !params.configuration.backendConfiguration) {
+      logger.info('Adding default backend configuration');
       params.configuration.backendConfiguration = {
         runtime: 'nodejs18.x',
         memorySize: 512,
@@ -88,8 +99,12 @@ async function handleDeploy(params: DeployToolParams): Promise<any> {
       };
     }
     
+    logger.info(`[DEPLOY TOOL] Calling deploy service for ${params.configuration.projectName}`);
+    
     // Deploy application
     const result = await deploy(params);
+    
+    logger.info(`[DEPLOY TOOL] Deploy service returned: ${JSON.stringify(result)}`);
     
     // Format outputs as content items for MCP protocol
     const contentItems = [];
@@ -110,6 +125,8 @@ async function handleDeploy(params: DeployToolParams): Promise<any> {
       }
     }
     
+    logger.info(`[DEPLOY TOOL COMPLETE] Successfully processed deploy request for ${params.configuration.projectName}`);
+    
     return {
       content: contentItems,
       status: result.status,
@@ -118,7 +135,7 @@ async function handleDeploy(params: DeployToolParams): Promise<any> {
       stackName: result.stackName
     };
   } catch (error) {
-    logger.error('Deploy tool error:', error);
+    logger.error(`[DEPLOY TOOL ERROR] Deploy tool error for ${params.configuration?.projectName || 'unknown project'}:`, error);
     return {
       content: [
         {
