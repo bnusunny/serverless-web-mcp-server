@@ -9,6 +9,7 @@ import * as fs from 'fs';
 import { promisify } from 'util';
 import { exec, spawn } from 'child_process';
 import * as handlebars from 'handlebars';
+import { fileURLToPath } from 'url';
 import { generateBootstrap } from './bootstrap-generator.js';
 import { 
   DeployOptions, 
@@ -19,6 +20,9 @@ import {
 import * as os from 'os';
 import { copyDirectory } from '../utils/fs-utils.js';
 import { logger } from '../utils/logger.js';
+
+// ES modules equivalent of __dirname
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const execAsync = promisify(exec);
 const mkdirAsync = promisify(fs.mkdir);
@@ -421,10 +425,8 @@ async function generateSamTemplate(
   deploymentDir: string, 
   configuration: DeploymentConfiguration
 ): Promise<void> {
-  // Get template path based on deployment type - using import.meta.url for ES modules
-  const currentFilePath = new URL(import.meta.url).pathname;
-  const currentDir = path.dirname(currentFilePath);
-  const templatePath = path.join(currentDir, '..', '..', 'templates', `${deploymentType}.hbs`);
+  // Get template path based on deployment type
+  const templatePath = path.join(__dirname, '..', '..', 'templates', `${deploymentType}.hbs`);
   
   // Read template
   const template = await readFileAsync(templatePath, 'utf8');
