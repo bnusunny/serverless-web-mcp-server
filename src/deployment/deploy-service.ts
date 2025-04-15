@@ -104,10 +104,10 @@ export async function deploy(options: DeployOptions): Promise<DeployResult> {
     });
     logger.info(`Initial deployment status created`);
     
-    // Schedule the build and deployment to start after a short delay
-    // This ensures the response is sent before the long-running process starts
-    logger.info(`Scheduling build and deployment process to run asynchronously`);
-    setTimeout(() => {
+    // Start the build and deployment process immediately using process.nextTick
+    // This ensures we return a response before the MCP timeout
+    logger.info(`Starting build and deployment process asynchronously with process.nextTick`);
+    process.nextTick(() => {
       buildAndDeployApplication(deploymentDir, configuration)
         .catch((error: Error) => {
           logger.error('Build and deployment error:', error);
@@ -118,9 +118,11 @@ export async function deploy(options: DeployOptions): Promise<DeployResult> {
             lastUpdated: new Date().toISOString()
           });
         });
-    }, 100);
+    });
     
     logger.info(`[DEPLOY COMPLETE] Deployment preparation completed for ${configuration.projectName}`);
+    
+    // Return immediately with the initial status
     return {
       status: 'preparing',
       message: `Deployment preparation started. Check status with deployment:${configuration.projectName} resource.`,
@@ -189,7 +191,7 @@ async function buildAndDeployApplication(
     
     // Get stack outputs
     logger.info(`[OUTPUTS] Retrieving CloudFormation stack outputs for ${configuration.projectName}`);
-    const outputs = await getStackOutputs(configuration.projectName);
+    const outputs = await getStackOutputs(configuration.projectName, configuration.region);
     logger.info(`Retrieved stack outputs: ${JSON.stringify(outputs)}`);
     
     // Update status to success
@@ -332,13 +334,17 @@ async function runSamDeploy(
  * Get stack outputs
  * 
  * @param stackName - Stack name
+ * @param region - AWS region
  * @returns - Stack outputs
  */
-async function getStackOutputs(stackName: string): Promise<Record<string, string>> {
+async function getStackOutputs(stackName: string, region?: string): Promise<Record<string, string>> {
   try {
+    const regionParam = region ? `--region ${region}` : '';
+    logger.info(`Getting stack outputs for ${stackName} in region ${region || 'default'}`);
+    
     // Run the AWS CLI command to get stack outputs
     const { stdout } = await execAsync(
-      `aws cloudformation describe-stacks --stack-name ${stackName} --query "Stacks[0].Outputs" --output json`
+      `aws cloudformation describe-stacks --stack-name ${stackName} ${regionParam} --query "Stacks[0].Outputs" --output json`
     );
     
     // Parse the outputs
@@ -351,6 +357,7 @@ async function getStackOutputs(stackName: string): Promise<Record<string, string
       });
     }
     
+    logger.info(`Successfully retrieved stack outputs for ${stackName}`);
     return formattedOutputs;
   } catch (error: any) {
     logger.error(`Error getting stack outputs for ${stackName}:`, error);
