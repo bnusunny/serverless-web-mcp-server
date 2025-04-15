@@ -8,7 +8,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { promisify } from 'util';
 import { exec, spawn } from 'child_process';
-import * as handlebars from 'handlebars';
+import handlebars from 'handlebars';
 import { fileURLToPath } from 'url';
 import { generateBootstrap } from './bootstrap-generator.js';
 import { 
