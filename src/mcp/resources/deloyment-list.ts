@@ -41,18 +41,32 @@ async function handleDeploymentsList(): Promise<any> {
           const statusData = fs.readFileSync(path.join(DEPLOYMENT_STATUS_DIR, file), 'utf8');
           const deployment = JSON.parse(statusData);
           
+          // Extract the project name from the filename if not in the deployment data
+          const projectName = deployment.projectName || file.replace('.json', '');
+          
           // Format each deployment as a text content item with URI
           deployments.push({
-            uri: `deployment:${deployment.projectName}`,
+            uri: `deployment:${projectName}`,
             text: JSON.stringify({
-              projectName: deployment.projectName,
-              type: deployment.deploymentType,
-              status: deployment.status,
-              lastUpdated: deployment.lastUpdated
+              projectName: projectName,
+              type: deployment.deploymentType || 'unknown',
+              status: deployment.status || 'unknown',
+              lastUpdated: deployment.lastUpdated || new Date().toISOString()
             })
           });
         } catch (error) {
           logger.error(`Error reading deployment status file ${file}:`, error);
+          // Include a fallback entry with the filename as the project name
+          const projectName = file.replace('.json', '');
+          deployments.push({
+            uri: `deployment:${projectName}`,
+            text: JSON.stringify({
+              projectName: projectName,
+              status: 'error',
+              message: `Error reading deployment data: ${error instanceof Error ? error.message : String(error)}`,
+              lastUpdated: new Date().toISOString()
+            })
+          });
         }
       }
     }
