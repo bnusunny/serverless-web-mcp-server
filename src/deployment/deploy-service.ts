@@ -7,7 +7,7 @@
 import * as path from 'path';
 import * as fs from 'fs';
 import { promisify } from 'util';
-import { exec, spawn } from 'child_process';
+import { exec } from 'child_process';
 import * as handlebars from 'handlebars';
 import { generateBootstrap } from './bootstrap-generator.js';
 import { 
@@ -69,22 +69,34 @@ export async function deploy(options: DeployOptions): Promise<DeployResult> {
     // Generate SAM template
     await generateSamTemplate(deploymentType, deploymentDir, configuration);
     
-    // Start deployment in background
-    startBackgroundDeployment(deploymentDir, configuration);
-    
-    // Update deployment status
+    // Create initial deployment status
     updateDeploymentStatus(configuration.projectName, {
-      status: 'in_progress',
-      message: `Deployment of ${deploymentType} application started. Check status with deployment:${configuration.projectName} resource.`,
+      status: 'preparing',
+      message: `Preparing deployment of ${deploymentType} application. This may take several minutes.`,
       startTime: new Date().toISOString(),
       projectName: configuration.projectName,
       deploymentType,
       lastUpdated: new Date().toISOString()
     });
     
+    // Schedule the build and deployment to start after a short delay
+    // This ensures the response is sent before the long-running process starts
+    setTimeout(() => {
+      buildAndDeployApplication(deploymentDir, configuration)
+        .catch((error: Error) => {
+          console.error('Build and deployment error:', error);
+          updateDeploymentStatus(configuration.projectName, {
+            status: 'error',
+            message: `Build and deployment error: ${error.message}`,
+            projectName: configuration.projectName,
+            lastUpdated: new Date().toISOString()
+          });
+        });
+    }, 100);
+    
     return {
-      status: 'in_progress',
-      message: `Deployment of ${deploymentType} application started. Check status with deployment:${configuration.projectName} resource.`,
+      status: 'preparing',
+      message: `Deployment preparation started. Check status with deployment:${configuration.projectName} resource.`,
       stackName: configuration.projectName
     };
   } catch (error) {
@@ -104,6 +116,100 @@ export async function deploy(options: DeployOptions): Promise<DeployResult> {
       message: `Deployment failed: ${error instanceof Error ? error.message : String(error)}`,
       error: String(error)
     };
+  }
+}
+
+/**
+ * Build and deploy the application
+ * 
+ * @param deploymentDir - Path to deployment directory
+ * @param configuration - Deployment configuration
+ */
+async function buildAndDeployApplication(
+  deploymentDir: string, 
+  configuration: DeploymentConfiguration
+): Promise<void> {
+  try {
+    // Update status to building
+    updateDeploymentStatus(configuration.projectName, {
+      status: 'building',
+      message: 'Building SAM application...',
+      projectName: configuration.projectName,
+      lastUpdated: new Date().toISOString()
+    });
+    
+    // Run sam build
+    try {
+      await execAsync('sam build', { cwd: deploymentDir });
+    } catch (buildError: any) {
+      updateDeploymentStatus(configuration.projectName, {
+        status: 'error',
+        message: `Build failed: ${buildError.message}`,
+        projectName: configuration.projectName,
+        lastUpdated: new Date().toISOString()
+      });
+      return;
+    }
+    
+    // Update status to deploying
+    updateDeploymentStatus(configuration.projectName, {
+      status: 'deploying',
+      message: 'Deploying application to AWS...',
+      projectName: configuration.projectName,
+      lastUpdated: new Date().toISOString()
+    });
+    
+    // Deploy using SAM CLI
+    try {
+      const deployCommand = `sam deploy --stack-name ${configuration.projectName} --capabilities CAPABILITY_IAM --no-confirm-changeset --no-fail-on-empty-changeset`;
+      await execAsync(deployCommand, { cwd: deploymentDir });
+      
+      // Get stack outputs
+      const { stdout } = await execAsync(
+        `aws cloudformation describe-stacks --stack-name ${configuration.projectName} --query "Stacks[0].Outputs" --output json`
+      );
+      
+      const outputs = JSON.parse(stdout);
+      
+      // Update status to success
+      updateDeploymentStatus(configuration.projectName, {
+        status: 'success',
+        message: 'Deployment completed successfully',
+        outputs,
+        projectName: configuration.projectName,
+        lastUpdated: new Date().toISOString()
+      });
+    } catch (deployError: any) {
+      // Check if the stack exists and get its status
+      try {
+        const { stdout } = await execAsync(
+          `aws cloudformation describe-stacks --stack-name ${configuration.projectName} --query "Stacks[0].StackStatus" --output text`
+        );
+        
+        const stackStatus = stdout.trim();
+        updateDeploymentStatus(configuration.projectName, {
+          status: 'error',
+          message: `Deployment failed with status: ${stackStatus}`,
+          projectName: configuration.projectName,
+          lastUpdated: new Date().toISOString()
+        });
+      } catch (innerError) {
+        // Stack might not exist
+        updateDeploymentStatus(configuration.projectName, {
+          status: 'error',
+          message: `Deployment failed: ${deployError.message}`,
+          projectName: configuration.projectName,
+          lastUpdated: new Date().toISOString()
+        });
+      }
+    }
+  } catch (error: any) {
+    updateDeploymentStatus(configuration.projectName, {
+      status: 'error',
+      message: `Deployment process failed: ${error.message}`,
+      projectName: configuration.projectName,
+      lastUpdated: new Date().toISOString()
+    });
   }
 }
 
@@ -259,176 +365,6 @@ async function generateSamTemplate(
   
   // Write template to deployment directory
   await writeFileAsync(path.join(deploymentDir, 'template.yaml'), renderedTemplate);
-}
-
-/**
- * Start deployment in background
- * 
- * @param deploymentDir - Path to deployment directory
- * @param configuration - Deployment configuration
- */
-function startBackgroundDeployment(
-  deploymentDir: string, 
-  configuration: DeploymentConfiguration
-): void {
-  // Create a Node.js script for the deployment process
-  const deployScriptPath = path.join(deploymentDir, 'deploy.js');
-  const statusCheckScriptPath = path.join(deploymentDir, 'status-check.js');
-  
-  // Create deployment script
-  const deployScript = `
-    const { execSync } = require('child_process');
-    const fs = require('fs');
-    const path = require('path');
-
-    try {
-      console.log('Building SAM application...');
-      execSync('sam build', { cwd: '${deploymentDir.replace(/\\/g, '\\\\')}', stdio: 'inherit' });
-      
-      console.log('Deploying SAM application...');
-      execSync('sam deploy --stack-name ${configuration.projectName} --capabilities CAPABILITY_IAM --no-confirm-changeset --no-fail-on-empty-changeset', 
-        { cwd: '${deploymentDir.replace(/\\/g, '\\\\')}', stdio: 'inherit' });
-      
-      console.log('Getting stack outputs...');
-      const outputs = execSync('aws cloudformation describe-stacks --stack-name ${configuration.projectName} --query "Stacks[0].Outputs" --output json', 
-        { encoding: 'utf8' });
-      
-      fs.writeFileSync(path.join('${deploymentDir.replace(/\\/g, '\\\\')}', 'outputs.json'), outputs);
-      console.log('Deployment completed successfully.');
-    } catch (error) {
-      console.error('Deployment failed:', error);
-      process.exit(1);
-    }
-  `;
-  
-  // Create status check script
-  const statusCheckScript = `
-    const fs = require('fs');
-    const path = require('path');
-    const { execSync } = require('child_process');
-    
-    const DEPLOYMENT_STATUS_DIR = '${DEPLOYMENT_STATUS_DIR.replace(/\\/g, '\\\\')}';
-    const projectName = '${configuration.projectName}';
-    const deploymentDir = '${deploymentDir.replace(/\\/g, '\\\\')}';
-    
-    function updateStatus(status) {
-      const statusFilePath = path.join(DEPLOYMENT_STATUS_DIR, \`\${projectName}.json\`);
-      fs.writeFileSync(statusFilePath, JSON.stringify({
-        ...status,
-        lastUpdated: new Date().toISOString()
-      }, null, 2));
-    }
-    
-    async function checkStatus() {
-      try {
-        // Check if outputs.json exists (deployment completed)
-        if (fs.existsSync(path.join(deploymentDir, 'outputs.json'))) {
-          const outputs = JSON.parse(fs.readFileSync(path.join(deploymentDir, 'outputs.json'), 'utf8'));
-          updateStatus({
-            status: 'success',
-            message: 'Deployment completed successfully',
-            outputs,
-            projectName
-          });
-          return true; // Exit the loop
-        }
-        
-        // Check CloudFormation stack status
-        try {
-          const stackStatusCmd = 'aws cloudformation describe-stacks --stack-name ' + 
-            projectName + ' --query "Stacks[0].StackStatus" --output text';
-          const stackStatus = execSync(stackStatusCmd, { encoding: 'utf8' }).trim();
-          
-          if (stackStatus === 'CREATE_COMPLETE' || stackStatus === 'UPDATE_COMPLETE') {
-            // Get outputs
-            const outputsCmd = 'aws cloudformation describe-stacks --stack-name ' + 
-              projectName + ' --query "Stacks[0].Outputs" --output json';
-            const outputs = JSON.parse(execSync(outputsCmd, { encoding: 'utf8' }));
-            
-            updateStatus({
-              status: 'success',
-              message: 'Deployment completed successfully',
-              outputs,
-              projectName
-            });
-            return true; // Exit the loop
-          } else if (stackStatus === 'CREATE_FAILED' || stackStatus === 'ROLLBACK_COMPLETE' || 
-                    stackStatus === 'UPDATE_FAILED') {
-            updateStatus({
-              status: 'error',
-              message: 'Deployment failed with status: ' + stackStatus,
-              projectName
-            });
-            return true; // Exit the loop
-          } else {
-            updateStatus({
-              status: 'in_progress',
-              message: 'Deployment in progress with status: ' + stackStatus,
-              projectName
-            });
-          }
-        } catch (error) {
-          // Stack might not exist yet
-          updateStatus({
-            status: 'in_progress',
-            message: 'Preparing deployment...',
-            projectName
-          });
-        }
-        
-        return false; // Continue the loop
-      } catch (error) {
-        console.error('Error checking status:', error);
-        return false; // Continue the loop
-      }
-    }
-    
-    async function main() {
-      while (true) {
-        const done = await checkStatus();
-        if (done) break;
-        
-        // Sleep for 10 seconds
-        await new Promise(resolve => setTimeout(resolve, 10000));
-      }
-    }
-    
-    main().catch(console.error);
-  `;
-  
-  // Write scripts to files
-  fs.writeFileSync(deployScriptPath, deployScript);
-  fs.writeFileSync(statusCheckScriptPath, statusCheckScript);
-  
-  // Make scripts executable on Unix-like systems
-  if (os.platform() !== 'win32') {
-    try {
-      fs.chmodSync(deployScriptPath, '755');
-      fs.chmodSync(statusCheckScriptPath, '755');
-    } catch (error) {
-      console.error('Error making scripts executable:', error);
-    }
-  }
-  
-  // Start deployment process
-  const deployProcess = spawn('node', [deployScriptPath], {
-    detached: true,
-    stdio: 'ignore',
-    windowsHide: true
-  });
-  
-  // Unref the process to allow the parent process to exit
-  deployProcess.unref();
-  
-  // Start status check process
-  const statusCheckProcess = spawn('node', [statusCheckScriptPath], {
-    detached: true,
-    stdio: 'ignore',
-    windowsHide: true
-  });
-  
-  // Unref the status check process
-  statusCheckProcess.unref();
 }
 
 /**
