@@ -50,7 +50,7 @@ export function getResourceDescriptions(): Array<{pattern: string, description: 
       pattern = 'template:{name}';
       examples = ['template:backend', 'template:frontend', 'template:fullstack'];
     } else if (resource.name === 'deployment-details') {
-      pattern = 'deployment:{project-name}';
+      pattern = 'deployment:{projectName}';
       examples = ['deployment:my-api', 'deployment:my-website'];
     }
     
