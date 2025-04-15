@@ -421,8 +421,10 @@ async function generateSamTemplate(
   deploymentDir: string, 
   configuration: DeploymentConfiguration
 ): Promise<void> {
-  // Get template path based on deployment type
-  const templatePath = path.join(__dirname, '..', '..', 'templates', `${deploymentType}.hbs`);
+  // Get template path based on deployment type - using import.meta.url for ES modules
+  const currentFilePath = new URL(import.meta.url).pathname;
+  const currentDir = path.dirname(currentFilePath);
+  const templatePath = path.join(currentDir, '..', '..', 'templates', `${deploymentType}.hbs`);
   
   // Read template
   const template = await readFileAsync(templatePath, 'utf8');
