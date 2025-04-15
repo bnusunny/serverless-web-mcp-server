@@ -41,13 +41,15 @@ async function handleDeploymentsList(): Promise<any> {
           const statusData = fs.readFileSync(path.join(DEPLOYMENT_STATUS_DIR, file), 'utf8');
           const deployment = JSON.parse(statusData);
           
-          // Extract basic information for the list
+          // Format each deployment as a text content item with URI
           deployments.push({
-            projectName: deployment.projectName,
-            type: deployment.deploymentType,
-            status: deployment.status,
-            lastUpdated: deployment.lastUpdated,
-            resources: deployment.resources || []
+            uri: `deployment:${deployment.projectName}`,
+            text: JSON.stringify({
+              projectName: deployment.projectName,
+              type: deployment.deploymentType,
+              status: deployment.status,
+              lastUpdated: deployment.lastUpdated
+            })
           });
         } catch (error) {
           logger.error(`Error reading deployment status file ${file}:`, error);

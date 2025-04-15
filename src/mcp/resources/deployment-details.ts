@@ -28,7 +28,10 @@ if (!fs.existsSync(DEPLOYMENT_STATUS_DIR)) {
 async function handleDeploymentDetails(uri: URL, variables?: Record<string, string>): Promise<any> {
   if (!variables || !variables.projectName) {
     return {
-      contents: null,
+      contents: {
+        uri: "deployment:unknown",
+        text: "Missing project name"
+      },
       metadata: {
         error: "Missing project name"
       }
@@ -48,7 +51,10 @@ async function handleDeploymentDetails(uri: URL, variables?: Record<string, stri
       
       // Return in the format expected by MCP protocol
       return {
-        contents: deploymentDetails,
+        contents: {
+          uri: `deployment:${projectName}`,
+          text: statusData
+        },
         metadata: {
           projectName
         }
@@ -56,7 +62,15 @@ async function handleDeploymentDetails(uri: URL, variables?: Record<string, stri
     } catch (error) {
       logger.error(`Error reading deployment status for ${projectName}:`, error);
       return {
-        contents: null,
+        contents: {
+          uri: `deployment:${projectName}`,
+          text: JSON.stringify({
+            projectName,
+            status: 'error',
+            message: `Error reading deployment status: ${error instanceof Error ? error.message : String(error)}`,
+            lastUpdated: new Date().toISOString()
+          })
+        },
         metadata: {
           projectName,
           error: `Error reading deployment status: ${error instanceof Error ? error.message : String(error)}`
@@ -68,10 +82,13 @@ async function handleDeploymentDetails(uri: URL, variables?: Record<string, stri
   // If no status file exists, return a placeholder response
   return {
     contents: {
-      projectName,
-      status: 'unknown',
-      message: 'Deployment status not found',
-      lastUpdated: new Date().toISOString()
+      uri: `deployment:${projectName}`,
+      text: JSON.stringify({
+        projectName,
+        status: 'unknown',
+        message: 'Deployment status not found',
+        lastUpdated: new Date().toISOString()
+      })
     },
     metadata: {
       projectName,
