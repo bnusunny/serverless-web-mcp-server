@@ -8,6 +8,7 @@ import { deploy } from '../../deployment/deploy-service.js';
 import { DeployToolParams, DeployToolResult } from '../../types/index.js';
 import { McpTool } from '../tools/index.js';
 import { z } from 'zod';
+import { logger } from '../../utils/logger.js';
 
 /**
  * Deploy tool handler
@@ -79,7 +80,7 @@ async function handleDeploy(params: DeployToolParams): Promise<DeployToolResult>
       stackName: result.stackName
     };
   } catch (error) {
-    console.error('Deploy tool error:', error);
+    logger.error('Deploy tool error:', error);
     return {
       status: 'error',
       message: `Deployment failed: ${error instanceof Error ? error.message : String(error)}`

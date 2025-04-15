@@ -1,4 +1,5 @@
 import { spawn } from 'child_process';
+import { logger } from '../utils/logger.js';
 
 // Type for status update callback
 type StatusCallback = (status: string) => void;
@@ -62,7 +63,7 @@ export async function configureDomain(params: any, statusCallback?: StatusCallba
       route53Records: route53Records
     };
   } catch (error) {
-    console.error('Domain configuration failed:', error);
+    logger.error('Domain configuration failed:', error);
     sendStatus(statusCallback, `Domain configuration failed: ${error instanceof Error ? error.message : String(error)}`);
     throw error;
   }
@@ -74,7 +75,7 @@ export async function configureDomain(params: any, statusCallback?: StatusCallba
 function sendStatus(callback?: StatusCallback, message?: string): void {
   if (callback && message) {
     callback(message);
-    console.log(message); // Also log to console
+    logger.info(message); // Also log to file
   }
 }
 

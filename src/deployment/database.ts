@@ -1,4 +1,5 @@
 import { spawn } from 'child_process';
+import { logger } from '../utils/logger.js';
 
 // Type for status update callback
 type StatusCallback = (status: string) => void;
@@ -31,7 +32,7 @@ export async function provisionDatabase(params: any, statusCallback?: StatusCall
       throw new Error(`Unsupported database type: ${databaseType}`);
     }
   } catch (error) {
-    console.error('Database provisioning failed:', error);
+    logger.error('Database provisioning failed:', error);
     sendStatus(statusCallback, `Database provisioning failed: ${error instanceof Error ? error.message : String(error)}`);
     throw error;
   }
@@ -43,7 +44,7 @@ export async function provisionDatabase(params: any, statusCallback?: StatusCall
 function sendStatus(callback?: StatusCallback, message?: string): void {
   if (callback && message) {
     callback(message);
-    console.log(message); // Also log to console
+    logger.info(message); // Also log to file
   }
 }
 

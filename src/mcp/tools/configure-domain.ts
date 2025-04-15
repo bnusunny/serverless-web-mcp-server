@@ -6,6 +6,7 @@
 
 import { McpTool } from './index.js';
 import { z } from 'zod';
+import { logger } from '../../utils/logger.js';
 
 /**
  * Configure domain tool handler
@@ -46,7 +47,7 @@ async function handleConfigureDomain(params: any): Promise<any> {
       }
     };
   } catch (error) {
-    console.error('Configure domain tool error:', error);
+    logger.error('Configure domain tool error:', error);
     return {
       status: 'error',
       message: `Domain configuration failed: ${error instanceof Error ? error.message : String(error)}`

@@ -8,6 +8,7 @@ import { McpResource } from './index.js';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
+import { logger } from '../../utils/logger.js';
 
 // Define the directory where deployment status files are stored
 const DEPLOYMENT_STATUS_DIR = path.join(os.tmpdir(), 'serverless-web-mcp-deployments');
@@ -40,7 +41,7 @@ async function handleDeploymentDetails(uri: URL, variables?: Record<string, stri
       const statusData = fs.readFileSync(statusFilePath, 'utf8');
       return JSON.parse(statusData);
     } catch (error) {
-      console.error(`Error reading deployment status for ${projectName}:`, error);
+      logger.error(`Error reading deployment status for ${projectName}:`, error);
     }
   }
   
