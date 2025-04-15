@@ -2,6 +2,7 @@ import { execSync } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 import { loadConfig } from '../config.js';
+import { logger } from '../utils/logger.js';
 
 /**
  * Get inventory of AWS resources for deployed applications
@@ -18,7 +19,7 @@ export async function getResourceInventory(projectName?: string): Promise<any> {
       return getAllProjectsResources(config.aws.region);
     }
   } catch (error) {
-    console.error('Failed to get resource inventory:', error);
+    logger.error('Failed to get resource inventory:', error);
     throw error;
   }
 }
@@ -72,7 +73,7 @@ async function getProjectResources(projectName: string, region: string): Promise
       resources: enhancedResources
     };
   } catch (error) {
-    console.error(`Failed to get resources for project ${projectName}:`, error);
+    logger.error(`Failed to get resources for project ${projectName}:`, error);
     throw error;
   }
 }
@@ -99,7 +100,7 @@ async function getAllProjectsResources(region: string): Promise<any> {
         try {
           return await getProjectResources(projectName, region);
         } catch (error) {
-          console.warn(`Skipping resources for project ${projectName}:`, error);
+          logger.warn(`Skipping resources for project ${projectName}:`, error);
           return null;
         }
       })
@@ -112,7 +113,7 @@ async function getAllProjectsResources(region: string): Promise<any> {
       projects: validProjectResources
     };
   } catch (error) {
-    console.error('Failed to get resources for all projects:', error);
+    logger.error('Failed to get resources for all projects:', error);
     throw error;
   }
 }
@@ -155,7 +156,7 @@ async function getResourceDetails(resourceType: string, resourceId: string, regi
         return {}; // No additional details for other resource types
     }
   } catch (error) {
-    console.warn(`Failed to get details for ${resourceType} ${resourceId}:`, error);
+    logger.warn(`Failed to get details for ${resourceType} ${resourceId}:`, error);
     return {};
   }
 }

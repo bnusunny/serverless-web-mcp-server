@@ -1,4 +1,5 @@
 import { spawn } from 'child_process';
+import { logger } from '../utils/logger.js';
 
 // Type for status update callback
 type StatusCallback = (status: string) => void;
@@ -50,7 +51,7 @@ export async function getMetrics(params: any, statusCallback?: StatusCallback): 
     
     return formattedMetrics;
   } catch (error) {
-    console.error('Metrics retrieval failed:', error);
+    logger.error('Metrics retrieval failed:', error);
     sendStatus(statusCallback, `Metrics retrieval failed: ${error instanceof Error ? error.message : String(error)}`);
     throw error;
   }
@@ -62,7 +63,7 @@ export async function getMetrics(params: any, statusCallback?: StatusCallback): 
 function sendStatus(callback?: StatusCallback, message?: string): void {
   if (callback && message) {
     callback(message);
-    console.log(message); // Also log to console
+    logger.info(message); // Also log to file
   }
 }
 
@@ -236,7 +237,7 @@ function formatMetrics(metricsOutput: string, namespace: string, metricName: str
     
     return JSON.stringify(formattedMetrics, null, 2);
   } catch (error) {
-    console.error('Error parsing metrics:', error);
+    logger.error('Error parsing metrics:', error);
     return `Error parsing metrics: ${error instanceof Error ? error.message : String(error)}`;
   }
 }

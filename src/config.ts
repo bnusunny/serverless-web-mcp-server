@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { logger } from './utils/logger.js';
 
 // Define configuration interface
 export interface Config {
@@ -55,8 +56,8 @@ export function loadConfig(): Config {
       };
     }
   } catch (error) {
-    console.warn('Error loading config file:', error);
-    console.warn('Using default configuration');
+    logger.warn('Error loading config file:', error);
+    logger.warn('Using default configuration');
   }
   
   return defaultConfig;

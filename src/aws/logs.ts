@@ -1,4 +1,5 @@
 import { spawn } from 'child_process';
+import { logger } from '../utils/logger.js';
 
 // Type for status update callback
 type StatusCallback = (status: string) => void;
@@ -39,7 +40,7 @@ export async function getLogs(params: any, statusCallback?: StatusCallback): Pro
     
     return formattedLogs;
   } catch (error) {
-    console.error('Log retrieval failed:', error);
+    logger.error('Log retrieval failed:', error);
     sendStatus(statusCallback, `Log retrieval failed: ${error instanceof Error ? error.message : String(error)}`);
     throw error;
   }
@@ -51,7 +52,7 @@ export async function getLogs(params: any, statusCallback?: StatusCallback): Pro
 function sendStatus(callback?: StatusCallback, message?: string): void {
   if (callback && message) {
     callback(message);
-    console.log(message); // Also log to console
+    logger.info(message); // Also log to file
   }
 }
 
@@ -164,7 +165,7 @@ function formatLogs(logsOutput: string, resourceType: string): string {
         }).join('\n');
     }
   } catch (error) {
-    console.error('Error parsing logs:', error);
+    logger.error('Error parsing logs:', error);
     return `Error parsing logs: ${error instanceof Error ? error.message : String(error)}`;
   }
 }
