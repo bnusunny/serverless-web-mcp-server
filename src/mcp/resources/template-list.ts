@@ -12,29 +12,40 @@ import { McpResource } from './index.js';
  * @returns - List of available templates
  */
 async function handleTemplateList(): Promise<any> {
+  const templates = [
+    {
+      name: 'backend',
+      description: 'Backend service using API Gateway and Lambda',
+      frameworks: ['express', 'flask', 'fastapi', 'nodejs']
+    },
+    {
+      name: 'frontend',
+      description: 'Frontend application using S3 and CloudFront',
+      frameworks: ['react', 'vue', 'angular', 'static']
+    },
+    {
+      name: 'fullstack',
+      description: 'Combined backend and frontend deployment',
+      frameworks: ['express+react', 'flask+vue', 'fastapi+react', 'nextjs']
+    },
+    {
+      name: 'database',
+      description: 'DynamoDB database',
+      type: 'dynamodb'
+    }
+  ];
+
+  // Format the response according to MCP protocol requirements
+  const contents = templates.map(template => ({
+    uri: `template:${template.name}`,
+    text: JSON.stringify(template)
+  }));
+
   return {
-    templates: [
-      {
-        name: 'backend',
-        description: 'Backend service using API Gateway and Lambda',
-        frameworks: ['express', 'flask', 'fastapi', 'nodejs']
-      },
-      {
-        name: 'frontend',
-        description: 'Frontend application using S3 and CloudFront',
-        frameworks: ['react', 'vue', 'angular', 'static']
-      },
-      {
-        name: 'fullstack',
-        description: 'Combined backend and frontend deployment',
-        frameworks: ['express+react', 'flask+vue', 'fastapi+react', 'nextjs']
-      },
-      {
-        name: 'database',
-        description: 'DynamoDB database',
-        type: 'dynamodb'
-      }
-    ]
+    contents: contents,
+    metadata: {
+      count: templates.length
+    }
   };
 }
 

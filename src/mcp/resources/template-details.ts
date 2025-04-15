@@ -15,15 +15,24 @@ import { McpResource } from './index.js';
  */
 async function handleTemplateDetails(uri: URL, variables?: Record<string, string>): Promise<any> {
   if (!variables || !variables.name) {
-    return undefined;
+    return {
+      contents: {
+        uri: "template:unknown",
+        text: JSON.stringify({ error: "Missing template name" })
+      },
+      metadata: {
+        error: "Missing template name"
+      }
+    };
   }
   
   const templateName = variables.name;
+  let templateDetails;
   
   // Implement template-specific logic here
   switch (templateName) {
     case 'backend':
-      return {
+      templateDetails = {
         name: 'backend',
         description: 'Backend service using API Gateway and Lambda',
         frameworks: ['express', 'flask', 'fastapi', 'nodejs'],
@@ -67,8 +76,9 @@ async function handleTemplateDetails(uri: URL, variables?: Record<string, string
           }
         }
       };
+      break;
     case 'frontend':
-      return {
+      templateDetails = {
         name: 'frontend',
         description: 'Frontend application using S3 and CloudFront',
         frameworks: ['react', 'vue', 'angular', 'static'],
@@ -106,8 +116,9 @@ async function handleTemplateDetails(uri: URL, variables?: Record<string, string
           }
         }
       };
+      break;
     case 'fullstack':
-      return {
+      templateDetails = {
         name: 'fullstack',
         description: 'Combined backend and frontend deployment',
         frameworks: ['express+react', 'flask+vue', 'fastapi+react', 'nextjs'],
@@ -160,8 +171,9 @@ async function handleTemplateDetails(uri: URL, variables?: Record<string, string
           }
         }
       };
+      break;
     case 'database':
-      return {
+      templateDetails = {
         name: 'database',
         description: 'DynamoDB database',
         type: 'dynamodb',
@@ -189,9 +201,29 @@ async function handleTemplateDetails(uri: URL, variables?: Record<string, string
           ]
         }
       };
+      break;
     default:
-      return undefined;
+      return {
+        contents: {
+          uri: `template:${templateName}`,
+          text: JSON.stringify({ error: `Template '${templateName}' not found` })
+        },
+        metadata: {
+          error: `Template '${templateName}' not found`
+        }
+      };
   }
+  
+  // Return in the format expected by MCP protocol
+  return {
+    contents: {
+      uri: `template:${templateName}`,
+      text: JSON.stringify(templateDetails)
+    },
+    metadata: {
+      name: templateName
+    }
+  };
 }
 
 /**
