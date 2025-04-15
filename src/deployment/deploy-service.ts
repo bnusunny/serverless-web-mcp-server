@@ -480,42 +480,24 @@ async function generateSamTemplate(
   // Determine the region to use
   const region = configuration.region || 'us-east-1';
   
-  // Find an existing SAM bucket in the same region or use a default name
-  let s3BucketName = '';
+  // Generate a unique bucket name with region prefix for better organization
+  const s3BucketName = `aws-sam-cli-managed-default-${region}-${Math.random().toString(36).substring(2, 10)}`;
+  
+  // Create the S3 bucket explicitly before deployment
   try {
-    // Try to find an existing SAM bucket in the specified region
-    const { stdout } = await execAsync(`aws s3api list-buckets --query "Buckets[?starts_with(Name, 'aws-sam-cli-managed-default-')].Name" --output text`);
-    const potentialBuckets = stdout.trim().split('\t').filter(Boolean);
+    logger.info(`Creating S3 bucket for deployment: ${s3BucketName} in ${region}`);
     
-    if (potentialBuckets.length > 0) {
-      // Check each bucket's region
-      for (const bucketName of potentialBuckets) {
-        try {
-          const { stdout: locationOutput } = await execAsync(`aws s3api get-bucket-location --bucket ${bucketName} --output text`);
-          // Note: 'None' means us-east-1 in AWS S3 API
-          const bucketRegion = locationOutput.trim() === 'None' ? 'us-east-1' : locationOutput.trim();
-          
-          if (bucketRegion === region) {
-            s3BucketName = bucketName;
-            logger.info(`Using existing SAM bucket in ${region}: ${s3BucketName}`);
-            break;
-          }
-        } catch (error) {
-          // Skip this bucket if we can't get its location
-          continue;
-        }
-      }
+    // For us-east-1, we need to use a different create-bucket command format
+    if (region === 'us-east-1') {
+      await execAsync(`aws s3api create-bucket --bucket ${s3BucketName} --region ${region}`);
+    } else {
+      await execAsync(`aws s3api create-bucket --bucket ${s3BucketName} --region ${region} --create-bucket-configuration LocationConstraint=${region}`);
     }
     
-    // If no suitable bucket was found, generate a name for a new one
-    if (!s3BucketName) {
-      s3BucketName = `aws-sam-cli-managed-default-samclisourcebucket-${Math.random().toString(36).substring(2, 10)}`;
-      logger.info(`No existing SAM buckets found in ${region}. Will create: ${s3BucketName}`);
-    }
+    logger.info(`Successfully created S3 bucket: ${s3BucketName}`);
   } catch (error) {
-    // If there's an error listing buckets, use a default name
-    s3BucketName = `aws-sam-cli-managed-default-samclisourcebucket-${Math.random().toString(36).substring(2, 10)}`;
-    logger.info(`Error listing buckets, using generated name: ${s3BucketName}`);
+    logger.error(`Failed to create S3 bucket: ${error instanceof Error ? error.message : String(error)}`);
+    throw new Error(`Failed to create deployment S3 bucket: ${error instanceof Error ? error.message : String(error)}`);
   }
   
   // Create a basic samconfig.toml file
