@@ -477,13 +477,35 @@ async function generateSamTemplate(
   // Write template to deployment directory
   await writeFileAsync(path.join(deploymentDir, 'template.yaml'), renderedTemplate);
   
+  // Find an existing SAM bucket or use a default name
+  let s3BucketName = '';
+  try {
+    // Try to find an existing SAM bucket
+    const { stdout } = await execAsync('aws s3api list-buckets --query "Buckets[?starts_with(Name, \'aws-sam-cli-managed-default-\')].Name" --output text');
+    const buckets = stdout.trim().split('\t').filter(Boolean);
+    
+    if (buckets.length > 0) {
+      // Use the first available SAM bucket
+      s3BucketName = buckets[0];
+      logger.info(`Using existing SAM bucket: ${s3BucketName}`);
+    } else {
+      // Generate a unique bucket name
+      s3BucketName = `aws-sam-cli-managed-default-samclisourcebucket-${Math.random().toString(36).substring(2, 10)}`;
+      logger.info(`No existing SAM buckets found. Will create: ${s3BucketName}`);
+    }
+  } catch (error) {
+    // If there's an error listing buckets, use a default name
+    s3BucketName = `aws-sam-cli-managed-default-samclisourcebucket-${Math.random().toString(36).substring(2, 10)}`;
+    logger.info(`Error listing buckets, using generated name: ${s3BucketName}`);
+  }
+  
   // Create a basic samconfig.toml file
   const samConfigContent = `version = 0.1
 [default]
 [default.deploy]
 [default.deploy.parameters]
 stack_name = "${configuration.projectName}"
-s3_bucket = "aws-sam-cli-managed-default-samclisourcebucket-${Math.random().toString(36).substring(2, 10)}"
+s3_bucket = "${s3BucketName}"
 s3_prefix = "${configuration.projectName}"
 region = "${configuration.region || 'us-east-1'}"
 confirm_changeset = false
