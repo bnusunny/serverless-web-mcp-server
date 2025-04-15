@@ -99,41 +99,42 @@ async function handleDeploy(params: DeployToolParams): Promise<any> {
       };
     }
     
-    logger.info(`[DEPLOY TOOL] Calling deploy service for ${params.configuration.projectName}`);
+    logger.info(`[DEPLOY TOOL] Preparing to start deployment for ${params.configuration.projectName}`);
     
-    // Deploy application
-    const result = await deploy(params);
+    // Create a response object immediately
+    const response = {
+      content: [
+        {
+          type: 'text',
+          text: `Starting deployment of ${params.deploymentType} application ${params.configuration.projectName}. This may take several minutes.`
+        },
+        {
+          type: 'text',
+          text: `You can check the status with the deployment:${params.configuration.projectName} resource.`
+        }
+      ],
+      status: 'preparing',
+      message: `Deployment preparation started. Check status with deployment:${params.configuration.projectName} resource.`,
+      stackName: params.configuration.projectName
+    };
     
-    logger.info(`[DEPLOY TOOL] Deploy service returned: ${JSON.stringify(result)}`);
-    
-    // Format outputs as content items for MCP protocol
-    const contentItems = [];
-    
-    // Add main deployment result
-    contentItems.push({
-      type: 'text',
-      text: `Deployment ${result.status}: ${result.message}`
+    // Start the deployment process in the background using process.nextTick
+    // This ensures we return a response before starting the long-running deployment
+    process.nextTick(async () => {
+      try {
+        logger.info(`[DEPLOY TOOL] Starting deployment process for ${params.configuration.projectName} in background`);
+        const result = await deploy(params);
+        logger.info(`[DEPLOY TOOL] Background deployment process completed with status: ${result.status}`);
+      } catch (error) {
+        logger.error(`[DEPLOY TOOL ERROR] Background deployment process failed:`, error);
+      }
     });
     
-    // Add outputs as separate content items
-    if (result.outputs && Object.keys(result.outputs).length > 0) {
-      for (const [key, value] of Object.entries(result.outputs)) {
-        contentItems.push({
-          type: 'text',
-          text: `${key}: ${value}`
-        });
-      }
-    }
+    logger.info(`[DEPLOY TOOL COMPLETE] Successfully initiated deploy request for ${params.configuration.projectName}`);
+    logger.info(`Returning immediate response: ${JSON.stringify(response)}`);
     
-    logger.info(`[DEPLOY TOOL COMPLETE] Successfully processed deploy request for ${params.configuration.projectName}`);
-    
-    return {
-      content: contentItems,
-      status: result.status,
-      message: result.message,
-      outputs: result.outputs,
-      stackName: result.stackName
-    };
+    // Return the response immediately, before the deployment actually starts
+    return response;
   } catch (error) {
     logger.error(`[DEPLOY TOOL ERROR] Deploy tool error for ${params.configuration?.projectName || 'unknown project'}:`, error);
     return {
