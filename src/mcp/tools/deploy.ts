@@ -16,11 +16,12 @@ import { logger } from '../../utils/logger.js';
  * @param params - Tool parameters
  * @returns - Tool result
  */
-async function handleDeploy(params: DeployToolParams): Promise<DeployToolResult> {
+async function handleDeploy(params: DeployToolParams): Promise<any> {
   try {
     // Validate required parameters
     if (!params.deploymentType) {
       return {
+        content: [],
         status: 'error',
         message: 'Missing required parameter: deploymentType'
       };
@@ -28,6 +29,7 @@ async function handleDeploy(params: DeployToolParams): Promise<DeployToolResult>
     
     if (!params.source || !params.source.path) {
       return {
+        content: [],
         status: 'error',
         message: 'Missing required parameter: source.path'
       };
@@ -35,6 +37,7 @@ async function handleDeploy(params: DeployToolParams): Promise<DeployToolResult>
     
     if (!params.configuration || !params.configuration.projectName) {
       return {
+        content: [],
         status: 'error',
         message: 'Missing required parameter: configuration.projectName'
       };
@@ -43,6 +46,7 @@ async function handleDeploy(params: DeployToolParams): Promise<DeployToolResult>
     // Prompt for framework if not provided
     if (!params.framework && !params.configuration.backendConfiguration?.framework) {
       return {
+        content: [],
         status: 'needs_input',
         message: 'Please specify the web framework being used (e.g., express, flask, fastapi, nextjs)',
         inputKey: 'framework'
@@ -53,6 +57,7 @@ async function handleDeploy(params: DeployToolParams): Promise<DeployToolResult>
     if ((params.deploymentType === 'backend' || params.deploymentType === 'fullstack') && 
         !params.configuration.backendConfiguration?.entryPoint) {
       return {
+        content: [],
         status: 'needs_input',
         message: 'Please specify the entry point for your application (e.g., app.js, app.py, main:app)',
         inputKey: 'entryPoint',
@@ -73,7 +78,27 @@ async function handleDeploy(params: DeployToolParams): Promise<DeployToolResult>
     // Deploy application
     const result = await deploy(params);
     
+    // Format outputs as content items for MCP protocol
+    const contentItems = [];
+    
+    // Add main deployment result
+    contentItems.push({
+      type: 'text',
+      text: `Deployment ${result.status}: ${result.message}`
+    });
+    
+    // Add outputs as separate content items
+    if (result.outputs && Object.keys(result.outputs).length > 0) {
+      for (const [key, value] of Object.entries(result.outputs)) {
+        contentItems.push({
+          type: 'text',
+          text: `${key}: ${value}`
+        });
+      }
+    }
+    
     return {
+      content: contentItems,
       status: result.status,
       message: result.message,
       outputs: result.outputs,
@@ -82,6 +107,12 @@ async function handleDeploy(params: DeployToolParams): Promise<DeployToolResult>
   } catch (error) {
     logger.error('Deploy tool error:', error);
     return {
+      content: [
+        {
+          type: 'text',
+          text: `Deployment failed: ${error instanceof Error ? error.message : String(error)}`
+        }
+      ],
       status: 'error',
       message: `Deployment failed: ${error instanceof Error ? error.message : String(error)}`
     };
