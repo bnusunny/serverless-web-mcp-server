@@ -37,8 +37,8 @@ export function parseCliOptions(): CliOptions {
  * Print help message
  */
 export function printHelp(): void {
-  // Using logger.info instead of console.log to avoid stdio transport interference
-  logger.info(`
+  // Using console.log directly for help message as it's meant to be displayed to the user
+  console.log(`
 Usage:
   serverless-web-mcp [options]
 
