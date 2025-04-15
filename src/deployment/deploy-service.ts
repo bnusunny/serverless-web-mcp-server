@@ -46,21 +46,34 @@ if (!fs.existsSync(DEPLOYMENT_STATUS_DIR)) {
 export async function deploy(options: DeployOptions): Promise<DeployResult> {
   const { deploymentType, source, framework, configuration } = options;
   
+  logger.info(`[DEPLOY START] Starting deployment process for ${configuration.projectName}`);
+  logger.info(`Deployment type: ${deploymentType}, Framework: ${framework || 'not specified'}`);
+  logger.info(`Source path: ${source.path}`);
+  logger.info(`Region: ${configuration.region || 'default'}`);
+  
   try {
     // Validate options
+    logger.info(`[STEP 1/6] Validating deployment options`);
     validateOptions(options);
+    logger.info(`Options validation successful`);
     
     // Create deployment directory
+    logger.info(`[STEP 2/6] Creating deployment directory for ${configuration.projectName}`);
     const deploymentDir = await createDeploymentDirectory(configuration.projectName);
+    logger.info(`Created deployment directory at: ${deploymentDir}`);
     
     // Copy source code
+    logger.info(`[STEP 3/6] Copying source code from ${source.path} to ${deploymentDir}`);
     await copySourceCode(source.path, deploymentDir, deploymentType);
+    logger.info(`Source code copied successfully`);
     
     // Generate bootstrap file for backend or fullstack deployments
     if (deploymentType === 'backend' || deploymentType === 'fullstack') {
       const backendDir = deploymentType === 'fullstack' 
         ? path.join(deploymentDir, 'src', 'backend')
         : path.join(deploymentDir, 'src');
+      
+      logger.info(`[STEP 4/6] Generating bootstrap file for ${framework || configuration.backendConfiguration?.framework} in ${backendDir}`);
       
       // Generate bootstrap file
       await generateBootstrap({
@@ -69,12 +82,18 @@ export async function deploy(options: DeployOptions): Promise<DeployResult> {
         projectPath: backendDir,
         environment: configuration.backendConfiguration?.environment || {}
       });
+      logger.info(`Bootstrap file generated successfully`);
+    } else {
+      logger.info(`[STEP 4/6] Skipping bootstrap generation for frontend deployment`);
     }
     
     // Generate SAM template
+    logger.info(`[STEP 5/6] Generating SAM template and configuration`);
     await generateSamTemplate(deploymentType, deploymentDir, configuration);
+    logger.info(`SAM template and configuration generated successfully`);
     
     // Create initial deployment status
+    logger.info(`[STEP 6/6] Creating initial deployment status`);
     updateDeploymentStatus(configuration.projectName, {
       status: 'preparing',
       message: `Preparing deployment of ${deploymentType} application. This may take several minutes.`,
@@ -83,9 +102,11 @@ export async function deploy(options: DeployOptions): Promise<DeployResult> {
       deploymentType,
       lastUpdated: new Date().toISOString()
     });
+    logger.info(`Initial deployment status created`);
     
     // Schedule the build and deployment to start after a short delay
     // This ensures the response is sent before the long-running process starts
+    logger.info(`Scheduling build and deployment process to run asynchronously`);
     setTimeout(() => {
       buildAndDeployApplication(deploymentDir, configuration)
         .catch((error: Error) => {
@@ -99,13 +120,14 @@ export async function deploy(options: DeployOptions): Promise<DeployResult> {
         });
     }, 100);
     
+    logger.info(`[DEPLOY COMPLETE] Deployment preparation completed for ${configuration.projectName}`);
     return {
       status: 'preparing',
       message: `Deployment preparation started. Check status with deployment:${configuration.projectName} resource.`,
       stackName: configuration.projectName
     };
   } catch (error) {
-    logger.error('Deployment failed:', error);
+    logger.error(`[DEPLOY ERROR] Deployment failed:`, error);
     
     // Update deployment status
     updateDeploymentStatus(configuration.projectName, {
@@ -135,6 +157,8 @@ async function buildAndDeployApplication(
   configuration: DeploymentConfiguration
 ): Promise<void> {
   try {
+    logger.info(`[BUILD START] Starting build and deployment process for ${configuration.projectName}`);
+    
     // Update status to building
     updateDeploymentStatus(configuration.projectName, {
       status: 'building',
@@ -142,9 +166,12 @@ async function buildAndDeployApplication(
       projectName: configuration.projectName,
       lastUpdated: new Date().toISOString()
     });
+    logger.info(`Updated deployment status to 'building'`);
     
     // Run sam build in a non-blocking way
+    logger.info(`[BUILD] Executing SAM build for ${configuration.projectName}`);
     await runSamBuild(deploymentDir, configuration.projectName);
+    logger.info(`[BUILD COMPLETE] SAM build completed for ${configuration.projectName}`);
     
     // Update status to deploying
     updateDeploymentStatus(configuration.projectName, {
@@ -153,12 +180,17 @@ async function buildAndDeployApplication(
       projectName: configuration.projectName,
       lastUpdated: new Date().toISOString()
     });
+    logger.info(`Updated deployment status to 'deploying'`);
     
     // Run sam deploy in a non-blocking way
+    logger.info(`[DEPLOY] Executing SAM deploy for ${configuration.projectName}`);
     await runSamDeploy(deploymentDir, configuration);
+    logger.info(`[DEPLOY COMPLETE] SAM deploy completed for ${configuration.projectName}`);
     
     // Get stack outputs
+    logger.info(`[OUTPUTS] Retrieving CloudFormation stack outputs for ${configuration.projectName}`);
     const outputs = await getStackOutputs(configuration.projectName);
+    logger.info(`Retrieved stack outputs: ${JSON.stringify(outputs)}`);
     
     // Update status to success
     updateDeploymentStatus(configuration.projectName, {
@@ -168,7 +200,9 @@ async function buildAndDeployApplication(
       projectName: configuration.projectName,
       lastUpdated: new Date().toISOString()
     });
+    logger.info(`[SUCCESS] Deployment process completed successfully for ${configuration.projectName}`);
   } catch (error: any) {
+    logger.error(`[ERROR] Deployment process failed for ${configuration.projectName}: ${error.message}`);
     updateDeploymentStatus(configuration.projectName, {
       status: 'error',
       message: `Deployment process failed: ${error.message}`,
@@ -382,11 +416,15 @@ function validateOptions(options: DeployOptions): void {
 async function createDeploymentDirectory(projectName: string): Promise<string> {
   const deploymentDir = path.join(process.cwd(), '.deployments', projectName);
   
+  logger.info(`Creating deployment directory at: ${deploymentDir}`);
+  
   // Create deployment directory
   await mkdirAsync(deploymentDir, { recursive: true });
+  logger.info(`Main deployment directory created`);
   
   // Create src directory
   await mkdirAsync(path.join(deploymentDir, 'src'), { recursive: true });
+  logger.info(`Source directory created at: ${path.join(deploymentDir, 'src')}`);
   
   return deploymentDir;
 }
@@ -403,25 +441,33 @@ async function copySourceCode(
   deploymentDir: string, 
   deploymentType: string
 ): Promise<void> {
+  logger.info(`Copying source code from ${sourcePath} to ${deploymentDir}`);
+  
   if (deploymentType === 'fullstack') {
     // Create backend and frontend directories
+    logger.info(`Creating backend and frontend directories for fullstack deployment`);
     await mkdirAsync(path.join(deploymentDir, 'src', 'backend'), { recursive: true });
     await mkdirAsync(path.join(deploymentDir, 'src', 'frontend'), { recursive: true });
     
     // Copy backend code (cross-platform)
     const backendSourcePath = path.join(sourcePath, 'backend');
     const backendDestPath = path.join(deploymentDir, 'src', 'backend');
+    logger.info(`Copying backend code from ${backendSourcePath} to ${backendDestPath}`);
     await copyDirectory(backendSourcePath, backendDestPath);
     
     // Copy frontend code (cross-platform)
     const frontendSourcePath = path.join(sourcePath, 'frontend');
     const frontendDestPath = path.join(deploymentDir, 'src', 'frontend');
+    logger.info(`Copying frontend code from ${frontendSourcePath} to ${frontendDestPath}`);
     await copyDirectory(frontendSourcePath, frontendDestPath);
   } else {
     // Copy source code (cross-platform)
     const destPath = path.join(deploymentDir, 'src');
+    logger.info(`Copying ${deploymentType} code from ${sourcePath} to ${destPath}`);
     await copyDirectory(sourcePath, destPath);
   }
+  
+  logger.info(`Source code copying completed`);
 }
 
 /**
