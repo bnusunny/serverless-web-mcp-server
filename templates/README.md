@@ -13,6 +13,8 @@ This directory contains Handlebars templates for different types of deployments.
 
 The templates use Handlebars syntax for dynamic content generation. The template processor injects deployment configuration parameters into these templates to generate AWS CloudFormation/SAM templates for deployment.
 
+For detailed documentation on the template system, including how templates are selected, processed, and extended, see [Template System Documentation](../docs/template-system.md).
+
 ## Template Structure
 
 Each template includes:
@@ -33,3 +35,5 @@ To add support for new frameworks or deployment types:
 1. Create a new template or modify an existing one
 2. Update the template registry in `src/template/registry.ts`
 3. Add any necessary processing logic in `src/template/processor.ts`
+
+For more detailed instructions on extending the template system, refer to the [Template System Documentation](../docs/template-system.md).
