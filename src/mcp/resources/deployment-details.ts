@@ -5,6 +5,7 @@
  */
 
 import { McpResource } from './index.js';
+import { ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
@@ -19,92 +20,81 @@ if (!fs.existsSync(DEPLOYMENT_STATUS_DIR)) {
 }
 
 /**
- * Handler for the deployment:{projectName} resource
- * 
- * @param uri - Resource URI
- * @param variables - URI template variables
- * @returns - Deployment details
- */
-async function handleDeploymentDetails(uri: URL, variables?: Record<string, string>): Promise<any> {
-  if (!variables || !variables.projectName) {
-    return {
-      contents: {
-        uri: "deployment:unknown",
-        text: "Missing project name"
-      },
-      metadata: {
-        error: "Missing project name"
-      }
-    };
-  }
-  
-  const projectName = variables.projectName;
-  
-  // Check if deployment status file exists
-  const statusFilePath = path.join(DEPLOYMENT_STATUS_DIR, `${projectName}.json`);
-  
-  if (fs.existsSync(statusFilePath)) {
-    try {
-      // Read deployment status from file
-      const statusData = fs.readFileSync(statusFilePath, 'utf8');
-      const deploymentDetails = JSON.parse(statusData);
-      
-      // Return in the format expected by MCP protocol
-      return {
-        contents: {
-          uri: `deployment:${projectName}`,
-          text: statusData
-        },
-        metadata: {
-          projectName
-        }
-      };
-    } catch (error) {
-      logger.error(`Error reading deployment status for ${projectName}:`, error);
-      return {
-        contents: {
-          uri: `deployment:${projectName}`,
-          text: JSON.stringify({
-            projectName,
-            status: 'error',
-            message: `Error reading deployment status: ${error instanceof Error ? error.message : String(error)}`,
-            lastUpdated: new Date().toISOString()
-          })
-        },
-        metadata: {
-          projectName,
-          error: `Error reading deployment status: ${error instanceof Error ? error.message : String(error)}`
-        }
-      };
-    }
-  }
-  
-  // If no status file exists, return a placeholder response
-  return {
-    contents: {
-      uri: `deployment:${projectName}`,
-      text: JSON.stringify({
-        projectName,
-        status: 'unknown',
-        message: 'Deployment status not found',
-        lastUpdated: new Date().toISOString()
-      })
-    },
-    metadata: {
-      projectName,
-      warning: 'Deployment status not found'
-    }
-  };
-}
-
-/**
  * Deployment Details resource definition
  */
 const deploymentDetails: McpResource = {
   name: 'deployment-details',
-  uri: 'deployment:{projectName}',
+  uri: new ResourceTemplate("deployment:{projectName}", { list: undefined }),
   description: 'Status and details of a specific deployment',
-  handler: handleDeploymentDetails
+  handler: async (uri, { projectName }, extra) => {
+    if (!projectName) {
+      return {
+        contents: [{
+          uri: "deployment:unknown",
+          text: "Missing project name"
+        }],
+        metadata: {
+          error: "Missing project name"
+        }
+      };
+    }
+    
+    // Check if deployment status file exists
+    const statusFilePath = path.join(DEPLOYMENT_STATUS_DIR, `${projectName}.json`);
+    
+    if (fs.existsSync(statusFilePath)) {
+      try {
+        // Read deployment status from file
+        const statusData = fs.readFileSync(statusFilePath, 'utf8');
+        const deploymentDetails = JSON.parse(statusData);
+        
+        // Return in the format expected by MCP protocol
+        return {
+          contents: [{
+            uri: `deployment:${projectName}`,
+            text: statusData
+          }],
+          metadata: {
+            projectName
+          }
+        };
+      } catch (error) {
+        logger.error(`Error reading deployment status for ${projectName}:`, error);
+        return {
+          contents: [{
+            uri: `deployment:${projectName}`,
+            text: JSON.stringify({
+              projectName,
+              status: 'error',
+              message: `Error reading deployment status: ${error instanceof Error ? error.message : String(error)}`,
+              lastUpdated: new Date().toISOString()
+            })
+          }],
+          metadata: {
+            projectName,
+            error: `Error reading deployment status: ${error instanceof Error ? error.message : String(error)}`
+          }
+        };
+      }
+    }
+    
+    // If no status file exists, return a placeholder response
+    return {
+      contents: [{
+        uri: `deployment:${projectName}`,
+        text: JSON.stringify({
+          projectName,
+          status: 'unknown',
+          message: 'Deployment status not found',
+          lastUpdated: new Date().toISOString()
+        })
+      }],
+      metadata: {
+        projectName,
+        warning: 'Deployment status not found'
+      }
+    };
+  }
 };
 
 export default deploymentDetails;
