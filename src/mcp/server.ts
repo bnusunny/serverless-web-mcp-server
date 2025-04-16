@@ -39,7 +39,13 @@ export function createMcpServer(): McpServer {
 
   // Register resources
   resources.forEach((resource: McpResource) => {
-    server.resource(resource.name, resource.uri, resource.handler);
+    if (typeof resource.uri === 'string') {
+      // Static resource with a fixed URI
+      server.resource(resource.name, resource.uri, resource.handler);
+    } else {
+      // Dynamic resource with a template URI
+      server.resource(resource.name, resource.uri, resource.handler);
+    }
   });
 
   return server;
@@ -55,6 +61,13 @@ export async function startStdioServer(server: McpServer): Promise<void> {
   try {
     // Create the StdioServerTransport
     const stdioTransport = new StdioServerTransport();
+    
+    // Add debug logging for messages
+    const originalSend = stdioTransport.send;
+    stdioTransport.send = async function(message) {
+      logger.debug(`[MCP OUTGOING] ${JSON.stringify(message)}`);
+      return originalSend.call(this, message);
+    };
     
     // Connect the server to the transport
     // Note: connect() automatically starts the transport
@@ -123,8 +136,27 @@ export async function startHttpServer(server: McpServer, port: number): Promise<
     const transport = new SSEServerTransport('/messages', res);
     const sessionId = transport.sessionId;
     
+    logger.debug(`Created new SSE transport with session ID: ${sessionId}`);
+    
+    // Add debug logging for messages
+    const originalSend = transport.send;
+    transport.send = async function(message) {
+      logger.debug(`[MCP OUTGOING][${sessionId}] ${JSON.stringify(message)}`);
+      return originalSend.call(this, message);
+    };
+    
+    // Add debug logging for handlePostMessage
+    const originalHandlePostMessage = transport.handlePostMessage;
+    transport.handlePostMessage = async function(req, res, parsedBody) {
+      logger.debug(`[MCP INCOMING][${sessionId}] ${JSON.stringify(parsedBody)}`);
+      return originalHandlePostMessage.call(this, req, res, parsedBody);
+    };
+    
     // Store the transport
     transports[sessionId] = transport;
+    
+    // Log all active transports
+    logger.debug(`Active transports: ${Object.keys(transports).join(', ')}`);
     
     // Clean up when the connection closes
     res.on("close", () => {
@@ -149,6 +181,9 @@ export async function startHttpServer(server: McpServer, port: number): Promise<
   app.post("/messages", async (req, res) => {
     const sessionId = req.query.sessionId as string;
     
+    logger.debug(`Received message for session ID: ${sessionId}`);
+    logger.debug(`Available transports: ${Object.keys(transports).join(', ')}`);
+    
     if (!sessionId) {
       logger.error("No sessionId provided in request");
       return res.status(400).json({ error: "No sessionId provided" });
@@ -160,6 +195,8 @@ export async function startHttpServer(server: McpServer, port: number): Promise<
       logger.error(`No transport found for sessionId: ${sessionId}`);
       return res.status(400).json({ error: "Invalid sessionId" });
     }
+    
+    logger.debug(`Found transport for session ID: ${sessionId}`);
     
     try {
       if (process.env.DEBUG) {
