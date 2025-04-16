@@ -79,14 +79,14 @@ Resources:
           {{#ifEquals frontendConfiguration.type "static"}}
           - ErrorCode: 404
             ResponseCode: 404
-            ResponsePagePath: !Sub "/${frontendConfiguration.errorDocument}"
+            ResponsePagePath: {{frontendConfiguration.errorDocument}}
           {{else}}
           - ErrorCode: 404
             ResponseCode: 200
-            ResponsePagePath: !Sub "/${frontendConfiguration.indexDocument}"
+            ResponsePagePath: {{frontendConfiguration.indexDocument}}
           - ErrorCode: 403
             ResponseCode: 200
-            ResponsePagePath: !Sub "/${frontendConfiguration.indexDocument}"
+            ResponsePagePath: {{frontendConfiguration.indexDocument}}
           {{/ifEquals}}
         {{#ifExists frontendConfiguration.customDomain}}
         Aliases:

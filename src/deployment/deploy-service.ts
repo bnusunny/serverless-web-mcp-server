@@ -225,7 +225,7 @@ async function runSamBuild(deploymentDir: string, projectName: string): Promise<
     logger.info(`Starting SAM build for ${projectName} in ${deploymentDir}`);
     
     // Create the build process
-    const buildProcess = spawn('sam', ['build', '--debug'], {
+    const buildProcess = spawn('sam', ['build'], {
       cwd: deploymentDir,
       stdio: 'pipe',
       shell: true // Use shell for cross-platform compatibility
@@ -286,8 +286,7 @@ async function runSamDeploy(
       '--stack-name', configuration.projectName,
       '--capabilities', 'CAPABILITY_IAM',
       '--no-confirm-changeset',
-      '--no-fail-on-empty-changeset',
-      '--debug'
+      '--no-fail-on-empty-changeset'
     ], {
       cwd: deploymentDir,
       stdio: 'pipe',

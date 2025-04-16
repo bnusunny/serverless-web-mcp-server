@@ -4,6 +4,8 @@
  * Exports all resource implementations and utility functions for working with resources.
  */
 
+import { ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
+
 // Export individual resources
 export { default as templateList } from './template-list.js';
 export { default as templateDetails } from './template-details.js';
@@ -21,9 +23,9 @@ import deploymentList from './deloyment-list.js';
  */
 export interface McpResource {
   name: string;
-  uri: string;
+  uri: string | ResourceTemplate;
   description: string;
-  handler: (uri: URL, variables?: any) => Promise<any>;
+  handler: (uri: URL, variables?: any, extra?: any) => Promise<any>;
 }
 
 // Create array of all resources
@@ -33,33 +35,5 @@ const resources = [
   deploymentList,
   deploymentDetails,
 ];
-
-/**
- * Get resource descriptions for documentation
- * 
- * @returns - Array of resource descriptions
- */
-export function getResourceDescriptions(): Array<{pattern: string, description: string, examples: string[]}> {
-  return resources.map((resource: McpResource) => {
-    // Convert URI patterns to documentation format
-    let pattern = resource.uri;
-    let examples: string[] = [resource.uri];
-    
-    // Handle parameterized resources
-    if (resource.name === 'template-details') {
-      pattern = 'template:{name}';
-      examples = ['template:backend', 'template:frontend', 'template:fullstack'];
-    } else if (resource.name === 'deployment-details') {
-      pattern = 'deployment:{projectName}';
-      examples = ['deployment:my-api', 'deployment:my-website'];
-    }
-    
-    return {
-      pattern,
-      description: resource.description,
-      examples
-    };
-  });
-}
 
 export default resources;

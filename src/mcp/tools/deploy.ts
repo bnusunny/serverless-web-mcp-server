@@ -118,9 +118,10 @@ async function handleDeploy(params: DeployToolParams): Promise<any> {
       stackName: params.configuration.projectName
     };
     
-    // Start the deployment process in the background using process.nextTick
-    // This ensures we return a response before starting the long-running deployment
-    process.nextTick(async () => {
+    // Start the deployment process in the background using setTimeout with 0ms delay
+    // This ensures the event loop completes and the response is sent to the client
+    // before starting the long-running deployment process
+    setTimeout(async () => {
       try {
         logger.info(`[DEPLOY TOOL] Starting deployment process for ${params.configuration.projectName} in background`);
         const result = await deploy(params);
@@ -128,7 +129,7 @@ async function handleDeploy(params: DeployToolParams): Promise<any> {
       } catch (error) {
         logger.error(`[DEPLOY TOOL ERROR] Background deployment process failed:`, error);
       }
-    });
+    }, 0);
     
     logger.info(`[DEPLOY TOOL COMPLETE] Successfully initiated deploy request for ${params.configuration.projectName}`);
     logger.info(`Returning immediate response: ${JSON.stringify(response)}`);
