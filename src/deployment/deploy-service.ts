@@ -15,9 +15,9 @@ import {
   DeployResult, 
   DeploymentConfiguration,
   DeploySamResult,
-  BackendDeployOptions,
-  DeploymentStatus
+  BackendDeployOptions
 } from '../types/index.js';
+import { DeploymentStatus } from './types.js';
 import * as os from 'os';
 import { logger } from '../utils/logger.js';
 import { generateStartupScript, StartupScriptOptions } from './startup-script-generator.js';
