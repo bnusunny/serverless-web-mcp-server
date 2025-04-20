@@ -11,8 +11,9 @@ import {
   DeployOptions, 
   BackendDeployOptions, 
   FrontendDeployOptions,
-  FullstackDeployOptions
-} from './types.js';
+  FullstackDeployOptions,
+  DeploymentConfiguration
+} from '../types/index.js';
 
 /**
  * ValidationResult interface for structured validation results
@@ -24,7 +25,7 @@ export interface ValidationResult {
 }
 
 /**
- * ValidationError interface for structured error information
+ * ValidationError interface for structured validation errors
  */
 export interface ValidationError {
   code: string;
@@ -34,7 +35,7 @@ export interface ValidationError {
 }
 
 /**
- * ValidationWarning interface for structured warning information
+ * ValidationWarning interface for structured validation warnings
  */
 export interface ValidationWarning {
   code: string;
@@ -43,34 +44,34 @@ export interface ValidationWarning {
   suggestion?: string;
 }
 
-/**
- * Supported runtimes for Lambda functions
- */
+// Supported Lambda runtimes
 const SUPPORTED_RUNTIMES = [
-  'nodejs18.x', 'nodejs16.x', 'nodejs14.x',
-  'python3.9', 'python3.8', 'python3.7',
-  'java11', 'java8.al2', 'java8',
-  'dotnet6', 'dotnet5.0', 'dotnet3.1',
-  'go1.x',
+  'nodejs18.x',
+  'nodejs16.x',
+  'python3.9',
+  'python3.8',
+  'java11',
+  'java8.al2',
+  'dotnet6',
   'ruby2.7'
 ];
 
 /**
- * Validate deployment options before deployment
+ * Validate deployment options
  * @param {DeployOptions} options - Deployment options
- * @returns {ValidationResult} Validation result with errors and warnings
+ * @returns {ValidationResult} Validation result
  */
-export function validateDeploymentOptions(options: DeployOptions): ValidationResult {
+export function validateDeployOptions(options: DeployOptions): ValidationResult {
   const result: ValidationResult = {
     valid: true,
     errors: [],
     warnings: []
   };
-
+  
   // Validate common options
   validateCommonOptions(options, result);
-
-  // Validate based on deployment type
+  
+  // Validate specific deployment type options
   switch (options.deploymentType) {
     case 'backend':
       validateBackendOptions(options, result);
@@ -89,11 +90,62 @@ export function validateDeploymentOptions(options: DeployOptions): ValidationRes
         suggestion: 'Use one of: backend, frontend, fullstack'
       });
   }
-
+  
   // Set valid flag based on errors
   result.valid = result.errors.length === 0;
-
+  
   return result;
+}
+
+/**
+ * Validate deployment configuration
+ * @param {DeploymentConfiguration} config - Deployment configuration
+ * @param {string} deploymentType - Deployment type
+ * @returns {void}
+ * @throws {Error} If validation fails
+ */
+export function validateConfiguration(config: DeploymentConfiguration, deploymentType: string): void {
+  const result: ValidationResult = {
+    valid: true,
+    errors: [],
+    warnings: []
+  };
+  
+  // Validate project name
+  if (!config.projectName) {
+    result.errors.push({
+      code: 'MISSING_PROJECT_NAME',
+      message: 'Project name is required',
+      path: 'projectName',
+      suggestion: 'Provide a unique project name for your deployment'
+    });
+  }
+  
+  // Validate specific deployment type configuration
+  switch (deploymentType) {
+    case 'backend':
+      validateBackendConfiguration(config.backendConfiguration, result);
+      break;
+    case 'frontend':
+      validateFrontendConfiguration(config.frontendConfiguration, result);
+      break;
+    case 'fullstack':
+      validateBackendConfiguration(config.backendConfiguration, result);
+      validateFrontendConfiguration(config.frontendConfiguration, result);
+      break;
+    default:
+      result.errors.push({
+        code: 'INVALID_DEPLOYMENT_TYPE',
+        message: `Invalid deployment type: ${deploymentType}`,
+        path: 'deploymentType',
+        suggestion: 'Use one of: backend, frontend, fullstack'
+      });
+  }
+  
+  // If validation failed, throw an error with the formatted result
+  if (result.errors.length > 0) {
+    throw new Error(formatValidationResult(result));
+  }
 }
 
 /**
@@ -134,22 +186,13 @@ function validateCommonOptions(options: DeployOptions, result: ValidationResult)
       : path.resolve(process.cwd(), options.projectRoot);
       
     if (!fs.existsSync(absoluteProjectRoot)) {
-    result.errors.push({
-      code: 'INVALID_PROJECT_ROOT',
-      message: `Project root directory does not exist: ${options.projectRoot}`,
-      path: 'projectRoot',
-      suggestion: 'Provide a valid path to your project root directory'
-    });
-  }
-
-  // Validate region
-  if (options.region && !/^[a-z]{2}-[a-z]+-\d+$/.test(options.region)) {
-    result.errors.push({
-      code: 'INVALID_REGION',
-      message: `Invalid AWS region format: ${options.region}`,
-      path: 'region',
-      suggestion: 'Use a valid AWS region format (e.g., us-east-1)'
-    });
+      result.errors.push({
+        code: 'INVALID_PROJECT_ROOT',
+        message: `Project root directory does not exist: ${options.projectRoot}`,
+        path: 'projectRoot',
+        suggestion: 'Check that the project root directory exists'
+      });
+    }
   }
 }
 
@@ -159,10 +202,8 @@ function validateCommonOptions(options: DeployOptions, result: ValidationResult)
  * @param {ValidationResult} result - Validation result to update
  */
 function validateBackendOptions(options: DeployOptions, result: ValidationResult): void {
-  const backendConfig = options.backendConfiguration;
-  
-  // Check if backend configuration exists
-  if (!backendConfig) {
+  // Validate backend configuration
+  if (!options.backendConfiguration) {
     result.errors.push({
       code: 'MISSING_BACKEND_CONFIG',
       message: 'Backend configuration is required for backend deployment',
@@ -171,19 +212,21 @@ function validateBackendOptions(options: DeployOptions, result: ValidationResult
     });
     return;
   }
-
+  
   // Validate built artifacts path
-  validateBuiltArtifactsPath(backendConfig, result);
+  validateBuiltArtifactsPath(options.backendConfiguration, result);
   
   // Validate runtime
-  validateRuntime(backendConfig, result);
+  validateRuntime(options.backendConfiguration, result);
   
-  // Validate startup script
-  validateStartupScript(backendConfig, result);
+  // Validate startup script if not generating one
+  if (!options.backendConfiguration.generateStartupScript) {
+    validateStartupScript(options.backendConfiguration, result);
+  }
   
   // Validate database configuration if provided
-  if (backendConfig.databaseConfiguration) {
-    validateDatabaseConfiguration(backendConfig.databaseConfiguration, result);
+  if (options.backendConfiguration.databaseConfiguration) {
+    validateDatabaseConfiguration(options.backendConfiguration.databaseConfiguration, result);
   }
 }
 
@@ -193,9 +236,8 @@ function validateBackendOptions(options: DeployOptions, result: ValidationResult
  * @param {ValidationResult} result - Validation result to update
  */
 function validateFrontendOptions(options: DeployOptions, result: ValidationResult): void {
+  // Validate frontend configuration
   const frontendConfig = options.frontendConfiguration;
-  
-  // Check if frontend configuration exists
   if (!frontendConfig) {
     result.errors.push({
       code: 'MISSING_FRONTEND_CONFIG',
@@ -250,47 +292,63 @@ function validateFullstackOptions(options: DeployOptions, result: ValidationResu
 }
 
 /**
- * Validate built artifacts path
+ * Validate backend configuration
  * @param {BackendDeployOptions} config - Backend configuration
  * @param {ValidationResult} result - Validation result to update
  */
-function validateBuiltArtifactsPath(config: BackendDeployOptions, result: ValidationResult): void {
-  if (!config.builtArtifactsPath) {
+function validateBackendConfiguration(config: BackendDeployOptions | undefined, result: ValidationResult): void {
+  if (!config) {
     result.errors.push({
-      code: 'MISSING_ARTIFACTS_PATH',
-      message: 'Built artifacts path is required',
-      path: 'backendConfiguration.builtArtifactsPath',
-      suggestion: 'Provide the path to your built backend artifacts'
+      code: 'MISSING_BACKEND_CONFIG',
+      message: 'Backend configuration is required',
+      path: 'backendConfiguration',
+      suggestion: 'Provide backendConfiguration with required parameters'
     });
     return;
   }
   
-  // Convert relative path to absolute for validation
-  const absoluteArtifactsPath = path.isAbsolute(config.builtArtifactsPath) 
-    ? config.builtArtifactsPath 
-    : path.resolve(process.cwd(), config.builtArtifactsPath);
+  // Validate built artifacts path
+  validateBuiltArtifactsPath(config, result);
   
-  logger.debug(`Checking built artifacts path: ${absoluteArtifactsPath}`);
+  // Validate runtime
+  validateRuntime(config, result);
   
-  if (!fs.existsSync(absoluteArtifactsPath)) {
+  // Validate startup script if not generating one
+  if (!config.generateStartupScript) {
+    validateStartupScript(config, result);
+  }
+  
+  // Validate database configuration if provided
+  if (config.databaseConfiguration) {
+    validateDatabaseConfiguration(config.databaseConfiguration, result);
+  }
+}
+
+/**
+ * Validate frontend configuration
+ * @param {FrontendDeployOptions} config - Frontend configuration
+ * @param {ValidationResult} result - Validation result to update
+ */
+function validateFrontendConfiguration(config: FrontendDeployOptions | undefined, result: ValidationResult): void {
+  if (!config) {
     result.errors.push({
-      code: 'INVALID_ARTIFACTS_PATH',
-      message: `Built artifacts path does not exist: ${config.builtArtifactsPath}`,
-      path: 'backendConfiguration.builtArtifactsPath',
-      suggestion: 'Build your application first or check the path to your built artifacts'
+      code: 'MISSING_FRONTEND_CONFIG',
+      message: 'Frontend configuration is required',
+      path: 'frontendConfiguration',
+      suggestion: 'Provide frontendConfiguration with required parameters'
     });
     return;
   }
   
-  // Check if the artifacts directory is empty
-  const files = fs.readdirSync(absoluteArtifactsPath);
-  if (files.length === 0) {
-    result.errors.push({
-      code: 'EMPTY_ARTIFACTS_PATH',
-      message: `Built artifacts directory is empty: ${config.builtArtifactsPath}`,
-      path: 'backendConfiguration.builtArtifactsPath',
-      suggestion: 'Build your application first or check that files are being output to the correct directory'
-    });
+  // Validate built assets path
+  validateBuiltAssetsPath(config, result);
+  
+  // Validate index document
+  validateIndexDocument(config, result);
+  
+  // Validate custom domain if provided
+  if (config.customDomain) {
+    validateCustomDomain(config, result);
   }
 }
 
@@ -338,205 +396,76 @@ function validateStartupScript(config: BackendDeployOptions, result: ValidationR
         code: 'ENTRY_POINT_NOT_FOUND',
         message: `Entry point file not found: ${entryPointPath}`,
         path: 'backendConfiguration.entryPoint',
-        suggestion: 'Check that your entry point file is included in your built artifacts'
+        suggestion: 'Check that your entry point file exists in the built artifacts directory'
       });
     }
-    
     return;
   }
   
-  // Otherwise, validate startupScript as before
+  // If not generating a startup script, validate that the startup script exists
   if (!config.startupScript) {
     result.errors.push({
       code: 'MISSING_STARTUP_SCRIPT',
-      message: 'Either startupScript or entryPoint with generateStartupScript=true is required',
+      message: 'Startup script is required',
       path: 'backendConfiguration.startupScript',
-      suggestion: 'Provide a startup script name or set entryPoint and generateStartupScript=true'
+      suggestion: 'Provide a startup script or set generateStartupScript to true and provide an entryPoint'
     });
     return;
   }
   
   const startupScriptPath = path.join(config.builtArtifactsPath, config.startupScript);
-  
   if (!fs.existsSync(startupScriptPath)) {
     result.errors.push({
       code: 'STARTUP_SCRIPT_NOT_FOUND',
       message: `Startup script not found: ${startupScriptPath}`,
       path: 'backendConfiguration.startupScript',
-      suggestion: 'Check that your startup script is included in your built artifacts'
-    });
-    return;
-  }
-  
-  try {
-    fs.accessSync(startupScriptPath, fs.constants.X_OK);
-  } catch (err) {
-    result.errors.push({
-      code: 'STARTUP_SCRIPT_NOT_EXECUTABLE',
-      message: `Startup script is not executable: ${startupScriptPath}`,
-      path: 'backendConfiguration.startupScript',
-      suggestion: `Run 'chmod +x ${startupScriptPath}' to make the script executable`
+      suggestion: 'Check that your startup script exists in the built artifacts directory or set generateStartupScript to true'
     });
   }
 }
 
 /**
- * Validate database configuration
- * @param {any} dbConfig - Database configuration
+ * Validate built artifacts path
+ * @param {BackendDeployOptions} config - Backend configuration
  * @param {ValidationResult} result - Validation result to update
  */
-function validateDatabaseConfiguration(dbConfig: any, result: ValidationResult): void {
-  // Validate table name
-  if (!dbConfig.tableName) {
+function validateBuiltArtifactsPath(config: BackendDeployOptions, result: ValidationResult): void {
+  if (!config.builtArtifactsPath) {
     result.errors.push({
-      code: 'MISSING_TABLE_NAME',
-      message: 'Table name is required for database configuration',
-      path: 'backendConfiguration.databaseConfiguration.tableName',
-      suggestion: 'Provide a name for your DynamoDB table'
+      code: 'MISSING_ARTIFACTS_PATH',
+      message: 'Built artifacts path is required',
+      path: 'backendConfiguration.builtArtifactsPath',
+      suggestion: 'Provide the path to your built backend artifacts'
     });
-  } else if (!/^[a-zA-Z0-9_.-]+$/.test(dbConfig.tableName)) {
-    result.errors.push({
-      code: 'INVALID_TABLE_NAME',
-      message: 'Table name contains invalid characters',
-      path: 'backendConfiguration.databaseConfiguration.tableName',
-      suggestion: 'Use only letters, numbers, underscores, hyphens, and periods in your table name'
-    });
+    return;
   }
   
-  // Validate attribute definitions
-  if (!dbConfig.attributeDefinitions || !Array.isArray(dbConfig.attributeDefinitions) || dbConfig.attributeDefinitions.length === 0) {
+  // Convert relative path to absolute for validation
+  const absoluteArtifactsPath = path.isAbsolute(config.builtArtifactsPath) 
+    ? config.builtArtifactsPath 
+    : path.resolve(process.cwd(), config.builtArtifactsPath);
+  
+  logger.debug(`Checking built artifacts path: ${absoluteArtifactsPath}`);
+  
+  if (!fs.existsSync(absoluteArtifactsPath)) {
     result.errors.push({
-      code: 'MISSING_ATTRIBUTE_DEFINITIONS',
-      message: 'Attribute definitions are required for database configuration',
-      path: 'backendConfiguration.databaseConfiguration.attributeDefinitions',
-      suggestion: 'Provide at least one attribute definition for your DynamoDB table'
+      code: 'INVALID_ARTIFACTS_PATH',
+      message: `Built artifacts path does not exist: ${config.builtArtifactsPath}`,
+      path: 'backendConfiguration.builtArtifactsPath',
+      suggestion: 'Build your application first or check the path to your built artifacts'
     });
-  } else {
-    // Check each attribute definition
-    dbConfig.attributeDefinitions.forEach((attr: any, index: number) => {
-      if (!attr.name) {
-        result.errors.push({
-          code: 'MISSING_ATTRIBUTE_NAME',
-          message: `Attribute name is missing in attribute definition at index ${index}`,
-          path: `backendConfiguration.databaseConfiguration.attributeDefinitions[${index}].name`,
-          suggestion: 'Provide a name for each attribute definition'
-        });
-      }
-      
-      if (!attr.type) {
-        result.errors.push({
-          code: 'MISSING_ATTRIBUTE_TYPE',
-          message: `Attribute type is missing in attribute definition at index ${index}`,
-          path: `backendConfiguration.databaseConfiguration.attributeDefinitions[${index}].type`,
-          suggestion: 'Provide a type (S, N, or B) for each attribute definition'
-        });
-      } else if (!['S', 'N', 'B'].includes(attr.type)) {
-        result.errors.push({
-          code: 'INVALID_ATTRIBUTE_TYPE',
-          message: `Invalid attribute type '${attr.type}' in attribute definition at index ${index}`,
-          path: `backendConfiguration.databaseConfiguration.attributeDefinitions[${index}].type`,
-          suggestion: 'Use S for String, N for Number, or B for Binary'
-        });
-      }
-    });
+    return;
   }
   
-  // Validate key schema
-  if (!dbConfig.keySchema || !Array.isArray(dbConfig.keySchema) || dbConfig.keySchema.length === 0) {
+  // Check if the artifacts directory is empty
+  const files = fs.readdirSync(absoluteArtifactsPath);
+  if (files.length === 0) {
     result.errors.push({
-      code: 'MISSING_KEY_SCHEMA',
-      message: 'Key schema is required for database configuration',
-      path: 'backendConfiguration.databaseConfiguration.keySchema',
-      suggestion: 'Provide at least one key schema entry for your DynamoDB table'
+      code: 'EMPTY_ARTIFACTS_PATH',
+      message: `Built artifacts directory is empty: ${config.builtArtifactsPath}`,
+      path: 'backendConfiguration.builtArtifactsPath',
+      suggestion: 'Build your application first or check that files are being output to the correct directory'
     });
-  } else {
-    // Check each key schema entry
-    dbConfig.keySchema.forEach((key: any, index: number) => {
-      if (!key.name) {
-        result.errors.push({
-          code: 'MISSING_KEY_NAME',
-          message: `Key name is missing in key schema at index ${index}`,
-          path: `backendConfiguration.databaseConfiguration.keySchema[${index}].name`,
-          suggestion: 'Provide a name for each key schema entry'
-        });
-      }
-      
-      if (!key.type) {
-        result.errors.push({
-          code: 'MISSING_KEY_TYPE',
-          message: `Key type is missing in key schema at index ${index}`,
-          path: `backendConfiguration.databaseConfiguration.keySchema[${index}].type`,
-          suggestion: 'Provide a type (HASH or RANGE) for each key schema entry'
-        });
-      } else if (!['HASH', 'RANGE'].includes(key.type)) {
-        result.errors.push({
-          code: 'INVALID_KEY_TYPE',
-          message: `Invalid key type '${key.type}' in key schema at index ${index}`,
-          path: `backendConfiguration.databaseConfiguration.keySchema[${index}].type`,
-          suggestion: 'Use HASH for partition key or RANGE for sort key'
-        });
-      }
-    });
-    
-    // Check if there's exactly one HASH key
-    const hashKeys = dbConfig.keySchema.filter((key: any) => key.type === 'HASH');
-    if (hashKeys.length === 0) {
-      result.errors.push({
-        code: 'MISSING_HASH_KEY',
-        message: 'Key schema must include exactly one HASH (partition) key',
-        path: 'backendConfiguration.databaseConfiguration.keySchema',
-        suggestion: 'Add a key with type HASH to your key schema'
-      });
-    } else if (hashKeys.length > 1) {
-      result.errors.push({
-        code: 'MULTIPLE_HASH_KEYS',
-        message: 'Key schema must include exactly one HASH (partition) key',
-        path: 'backendConfiguration.databaseConfiguration.keySchema',
-        suggestion: 'Remove extra HASH keys from your key schema'
-      });
-    }
-    
-    // Check if there's at most one RANGE key
-    const rangeKeys = dbConfig.keySchema.filter((key: any) => key.type === 'RANGE');
-    if (rangeKeys.length > 1) {
-      result.errors.push({
-        code: 'MULTIPLE_RANGE_KEYS',
-        message: 'Key schema must include at most one RANGE (sort) key',
-        path: 'backendConfiguration.databaseConfiguration.keySchema',
-        suggestion: 'Remove extra RANGE keys from your key schema'
-      });
-    }
-  }
-  
-  // Validate billing mode
-  if (dbConfig.billingMode && !['PROVISIONED', 'PAY_PER_REQUEST'].includes(dbConfig.billingMode)) {
-    result.errors.push({
-      code: 'INVALID_BILLING_MODE',
-      message: `Invalid billing mode: ${dbConfig.billingMode}`,
-      path: 'backendConfiguration.databaseConfiguration.billingMode',
-      suggestion: 'Use PROVISIONED or PAY_PER_REQUEST for billing mode'
-    });
-  }
-  
-  // Validate provisioned capacity if billing mode is PROVISIONED
-  if (dbConfig.billingMode === 'PROVISIONED') {
-    if (typeof dbConfig.readCapacity !== 'number' || dbConfig.readCapacity < 1) {
-      result.errors.push({
-        code: 'INVALID_READ_CAPACITY',
-        message: 'Read capacity must be a number greater than or equal to 1 when using PROVISIONED billing mode',
-        path: 'backendConfiguration.databaseConfiguration.readCapacity',
-        suggestion: 'Provide a valid read capacity value (minimum 1)'
-      });
-    }
-    
-    if (typeof dbConfig.writeCapacity !== 'number' || dbConfig.writeCapacity < 1) {
-      result.errors.push({
-        code: 'INVALID_WRITE_CAPACITY',
-        message: 'Write capacity must be a number greater than or equal to 1 when using PROVISIONED billing mode',
-        path: 'backendConfiguration.databaseConfiguration.writeCapacity',
-        suggestion: 'Provide a valid write capacity value (minimum 1)'
-      });
-    }
   }
 }
 
@@ -618,21 +547,76 @@ function validateIndexDocument(config: FrontendDeployOptions, result: Validation
  * @param {ValidationResult} result - Validation result to update
  */
 function validateCustomDomain(config: FrontendDeployOptions, result: ValidationResult): void {
-  if (!/^([a-z0-9]+(-[a-z0-9]+)*\.)+[a-z]{2,}$/.test(config.customDomain)) {
+  if (!config.customDomain) {
+    return;
+  }
+  
+  // Validate domain name format
+  const domainRegex = /^([a-z0-9]+(-[a-z0-9]+)*\.)+[a-z]{2,}$/;
+  if (!domainRegex.test(config.customDomain)) {
     result.errors.push({
-      code: 'INVALID_CUSTOM_DOMAIN',
-      message: `Invalid custom domain format: ${config.customDomain}`,
+      code: 'INVALID_DOMAIN_NAME',
+      message: `Invalid domain name format: ${config.customDomain}`,
       path: 'frontendConfiguration.customDomain',
       suggestion: 'Provide a valid domain name (e.g., example.com)'
     });
   }
   
-  if (config.customDomain && !config.certificateArn) {
+  // If certificate ARN is provided, validate its format
+  if (config.certificateArn) {
+    const arnRegex = /^arn:aws:acm:[a-z0-9-]+:\d{12}:certificate\/[a-f0-9-]+$/;
+    if (!arnRegex.test(config.certificateArn)) {
+      result.errors.push({
+        code: 'INVALID_CERTIFICATE_ARN',
+        message: `Invalid certificate ARN format: ${config.certificateArn}`,
+        path: 'frontendConfiguration.certificateArn',
+        suggestion: 'Provide a valid ACM certificate ARN'
+      });
+    }
+  } else {
+    // If no certificate ARN is provided, add a warning
     result.warnings.push({
       code: 'MISSING_CERTIFICATE_ARN',
-      message: 'Custom domain specified without certificate ARN',
+      message: 'No certificate ARN provided for custom domain',
       path: 'frontendConfiguration.certificateArn',
-      suggestion: 'Provide a certificate ARN for your custom domain or a certificate will be created automatically'
+      suggestion: 'Provide a certificate ARN or a new certificate will be created'
+    });
+  }
+}
+
+/**
+ * Validate database configuration
+ * @param {any} config - Database configuration
+ * @param {ValidationResult} result - Validation result to update
+ */
+function validateDatabaseConfiguration(config: any, result: ValidationResult): void {
+  // Basic validation for now
+  if (!config.tableName) {
+    result.errors.push({
+      code: 'MISSING_TABLE_NAME',
+      message: 'Table name is required for database configuration',
+      path: 'backendConfiguration.databaseConfiguration.tableName',
+      suggestion: 'Provide a table name for your DynamoDB table'
+    });
+  }
+  
+  // Validate attribute definitions
+  if (!config.attributeDefinitions || !Array.isArray(config.attributeDefinitions) || config.attributeDefinitions.length === 0) {
+    result.errors.push({
+      code: 'MISSING_ATTRIBUTE_DEFINITIONS',
+      message: 'Attribute definitions are required for database configuration',
+      path: 'backendConfiguration.databaseConfiguration.attributeDefinitions',
+      suggestion: 'Provide attribute definitions for your DynamoDB table'
+    });
+  }
+  
+  // Validate key schema
+  if (!config.keySchema || !Array.isArray(config.keySchema) || config.keySchema.length === 0) {
+    result.errors.push({
+      code: 'MISSING_KEY_SCHEMA',
+      message: 'Key schema is required for database configuration',
+      path: 'backendConfiguration.databaseConfiguration.keySchema',
+      suggestion: 'Provide a key schema for your DynamoDB table'
     });
   }
 }
@@ -642,7 +626,7 @@ function validateCustomDomain(config: FrontendDeployOptions, result: ValidationR
  * @param {ValidationResult} result - Validation result
  * @returns {string} Formatted message
  */
-export function formatValidationResult(result: ValidationResult): string {
+function formatValidationResult(result: ValidationResult): string {
   let message = '';
   
   if (result.valid) {
@@ -675,3 +659,5 @@ export function formatValidationResult(result: ValidationResult): string {
   
   return message;
 }
+
+export { formatValidationResult };
