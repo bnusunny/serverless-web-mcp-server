@@ -45,8 +45,8 @@ export async function handleDeploy(params) {
           message: `Unknown deployment status: ${result.status}`,
           content: [
             {
-              title: "Deployment Status",
-              content: `Unknown deployment status: ${result.status}`
+              type: "text",
+              text: `Unknown deployment status: ${result.status}`
             }
           ],
           result
@@ -59,12 +59,8 @@ export async function handleDeploy(params) {
       message: `Deployment failed: ${error.message}`,
       content: [
         {
-          title: "Error",
-          content: error.message
-        },
-        {
-          title: "Stack Trace",
-          content: error.stack || "No stack trace available"
+          type: "text",
+          text: `Deployment failed: ${error.message}\n\nStack Trace:\n${error.stack || "No stack trace available"}`
         }
       ],
       error: error.message,
@@ -80,106 +76,120 @@ export async function handleDeploy(params) {
  * @returns {Object} Formatted response
  */
 function formatSuccessResponse(result, deploymentType) {
-  const response = {
-    success: true,
-    message: result.message,
-    deploymentType,
-    status: result.status,
-    content: [
-      {
-        title: "Deployment Status",
-        content: "Deployment completed successfully"
-      }
-    ]
-  };
+  let responseText = `Deployment completed successfully!\n\n`;
   
   switch (deploymentType) {
     case 'backend':
-      response.apiUrl = result.url;
-      response.endpoints = {
-        api: result.url
-      };
-      response.outputs = result.outputs || {};
-      
-      // Add API URL to content
+      responseText += `Deployment Type: Backend\n`;
       if (result.url) {
-        response.content.push({
-          title: "API URL",
-          content: result.url
-        });
+        responseText += `API URL: ${result.url}\n\n`;
       }
       
-      // Add outputs to content if available
       if (result.outputs && Object.keys(result.outputs).length > 0) {
-        response.content.push({
-          title: "Outputs",
-          content: JSON.stringify(result.outputs, null, 2)
-        });
+        responseText += `Outputs:\n${JSON.stringify(result.outputs, null, 2)}\n`;
       }
       
-      return response;
+      return {
+        success: true,
+        message: result.message,
+        deploymentType,
+        status: result.status,
+        apiUrl: result.url,
+        endpoints: {
+          api: result.url
+        },
+        outputs: result.outputs || {},
+        content: [
+          {
+            type: "text",
+            text: responseText
+          }
+        ]
+      };
       
     case 'frontend':
-      response.websiteUrl = result.url;
-      response.endpoints = {
-        website: result.url
-      };
-      response.bucketName = result.bucketName;
-      response.distributionUrl = result.distributionUrl;
-      
-      // Add website URL to content
+      responseText += `Deployment Type: Frontend\n`;
       if (result.url) {
-        response.content.push({
-          title: "Website URL",
-          content: result.url
-        });
+        responseText += `Website URL: ${result.url}\n`;
       }
-      
-      // Add bucket info to content
       if (result.bucketName) {
-        response.content.push({
-          title: "S3 Bucket",
-          content: result.bucketName
-        });
+        responseText += `S3 Bucket: ${result.bucketName}\n`;
+      }
+      if (result.distributionUrl) {
+        responseText += `CloudFront Distribution: ${result.distributionUrl}\n`;
       }
       
-      return response;
+      return {
+        success: true,
+        message: result.message,
+        deploymentType,
+        status: result.status,
+        websiteUrl: result.url,
+        endpoints: {
+          website: result.url
+        },
+        bucketName: result.bucketName,
+        distributionUrl: result.distributionUrl,
+        content: [
+          {
+            type: "text",
+            text: responseText
+          }
+        ]
+      };
       
     case 'fullstack':
-      response.endpoints = {
-        api: result.backendUrl,
-        website: result.frontendUrl
-      };
-      response.backend = {
-        apiUrl: result.backendUrl,
-        outputs: result.backendResult?.outputs || {}
-      };
-      response.frontend = {
-        websiteUrl: result.frontendUrl,
-        bucketName: result.frontendResult?.bucketName,
-        distributionUrl: result.frontendResult?.distributionUrl
-      };
-      
-      // Add backend URL to content
+      responseText += `Deployment Type: Fullstack\n`;
       if (result.backendUrl) {
-        response.content.push({
-          title: "API URL",
-          content: result.backendUrl
-        });
+        responseText += `API URL: ${result.backendUrl}\n`;
       }
-      
-      // Add frontend URL to content
       if (result.frontendUrl) {
-        response.content.push({
-          title: "Website URL",
-          content: result.frontendUrl
-        });
+        responseText += `Website URL: ${result.frontendUrl}\n`;
       }
       
-      return response;
+      if (result.backendResult?.outputs && Object.keys(result.backendResult.outputs).length > 0) {
+        responseText += `\nBackend Outputs:\n${JSON.stringify(result.backendResult.outputs, null, 2)}\n`;
+      }
+      
+      return {
+        success: true,
+        message: result.message,
+        deploymentType,
+        status: result.status,
+        endpoints: {
+          api: result.backendUrl,
+          website: result.frontendUrl
+        },
+        backend: {
+          apiUrl: result.backendUrl,
+          outputs: result.backendResult?.outputs || {}
+        },
+        frontend: {
+          websiteUrl: result.frontendUrl,
+          bucketName: result.frontendResult?.bucketName,
+          distributionUrl: result.frontendResult?.distributionUrl
+        },
+        content: [
+          {
+            type: "text",
+            text: responseText
+          }
+        ]
+      };
       
     default:
-      return response;
+      return {
+        success: true,
+        message: result.message,
+        deploymentType,
+        status: result.status,
+        content: [
+          {
+            type: "text",
+            text: responseText
+          }
+        ]
+      };
   }
 }
 
@@ -190,7 +200,53 @@ function formatSuccessResponse(result, deploymentType) {
  * @returns {Object} Formatted response
  */
 function formatPartialResponse(result, deploymentType) {
-  const response = {
+  let responseText = `Partial Deployment: Some components were deployed successfully, but others failed.\n\n`;
+  responseText += `Error: ${result.error || "Unknown error"}\n\n`;
+  
+  // Only applicable for fullstack deployments
+  if (deploymentType === 'fullstack') {
+    const backendSuccess = result.backendResult?.status === DeploymentStatus.DEPLOYED;
+    const frontendSuccess = result.frontendResult?.status === DeploymentStatus.DEPLOYED;
+    
+    responseText += `Backend Status: ${backendSuccess ? "Deployed successfully" : "Deployment failed"}\n`;
+    responseText += `Frontend Status: ${frontendSuccess ? "Deployed successfully" : "Deployment failed"}\n\n`;
+    
+    if (result.backendResult?.url) {
+      responseText += `API URL: ${result.backendResult.url}\n`;
+    }
+    
+    if (result.frontendResult?.url) {
+      responseText += `Website URL: ${result.frontendResult.url}\n`;
+    }
+    
+    return {
+      success: false,
+      partialSuccess: true,
+      message: result.message,
+      deploymentType,
+      status: result.status,
+      error: result.error,
+      backend: {
+        success: backendSuccess,
+        apiUrl: result.backendResult?.url,
+        outputs: result.backendResult?.outputs || {}
+      },
+      frontend: {
+        success: frontendSuccess,
+        websiteUrl: result.frontendResult?.url,
+        bucketName: result.frontendResult?.bucketName,
+        distributionUrl: result.frontendResult?.distributionUrl
+      },
+      content: [
+        {
+          type: "text",
+          text: responseText
+        }
+      ]
+    };
+  }
+  
+  return {
     success: false,
     partialSuccess: true,
     message: result.message,
@@ -199,61 +255,11 @@ function formatPartialResponse(result, deploymentType) {
     error: result.error,
     content: [
       {
-        title: "Partial Deployment",
-        content: "Some components were deployed successfully, but others failed."
-      },
-      {
-        title: "Error",
-        content: result.error || "Unknown error"
+        type: "text",
+        text: responseText
       }
     ]
   };
-  
-  // Only applicable for fullstack deployments
-  if (deploymentType === 'fullstack') {
-    response.backend = {
-      success: result.backendResult?.status === DeploymentStatus.DEPLOYED,
-      apiUrl: result.backendResult?.url,
-      outputs: result.backendResult?.outputs || {}
-    };
-    response.frontend = {
-      success: result.frontendResult?.status === DeploymentStatus.DEPLOYED,
-      websiteUrl: result.frontendResult?.url,
-      bucketName: result.frontendResult?.bucketName,
-      distributionUrl: result.frontendResult?.distributionUrl
-    };
-    
-    // Add backend status to content
-    response.content.push({
-      title: "Backend Status",
-      content: result.backendResult?.status === DeploymentStatus.DEPLOYED ? 
-        "Deployed successfully" : "Deployment failed"
-    });
-    
-    // Add frontend status to content
-    response.content.push({
-      title: "Frontend Status",
-      content: result.frontendResult?.status === DeploymentStatus.DEPLOYED ? 
-        "Deployed successfully" : "Deployment failed"
-    });
-    
-    // Add URLs if available
-    if (result.backendResult?.url) {
-      response.content.push({
-        title: "API URL",
-        content: result.backendResult.url
-      });
-    }
-    
-    if (result.frontendResult?.url) {
-      response.content.push({
-        title: "Website URL",
-        content: result.frontendResult.url
-      });
-    }
-  }
-  
-  return response;
 }
 
 /**
@@ -263,62 +269,53 @@ function formatPartialResponse(result, deploymentType) {
  * @returns {Object} Formatted response
  */
 function formatErrorResponse(result, deploymentType) {
-  const response = {
-    success: false,
-    message: result.message,
-    deploymentType,
-    status: result.status,
-    error: result.error,
-    content: [
-      {
-        title: "Deployment Failed",
-        content: result.message
-      },
-      {
-        title: "Error",
-        content: result.error || "Unknown error"
-      }
-    ]
-  };
+  let responseText = `Deployment Failed: ${result.message}\n\n`;
+  responseText += `Error: ${result.error || "Unknown error"}\n\n`;
   
   // Add validation results if available
   if (result.validationResult) {
-    response.validationErrors = result.validationResult.errors;
-    response.validationWarnings = result.validationResult.warnings;
-    
-    // Add validation errors to content
     if (result.validationResult.errors && result.validationResult.errors.length > 0) {
-      const errorsContent = result.validationResult.errors.map(err => 
-        `- ${err.message}${err.suggestion ? `\n  Suggestion: ${err.suggestion}` : ''}`
-      ).join('\n');
-      
-      response.content.push({
-        title: "Validation Errors",
-        content: errorsContent
+      responseText += `Validation Errors:\n`;
+      result.validationResult.errors.forEach(err => {
+        responseText += `- ${err.message}\n`;
+        if (err.suggestion) {
+          responseText += `  Suggestion: ${err.suggestion}\n`;
+        }
       });
+      responseText += `\n`;
     }
     
-    // Add validation warnings to content
     if (result.validationResult.warnings && result.validationResult.warnings.length > 0) {
-      const warningsContent = result.validationResult.warnings.map(warn => 
-        `- ${warn.message}${warn.suggestion ? `\n  Suggestion: ${warn.suggestion}` : ''}`
-      ).join('\n');
-      
-      response.content.push({
-        title: "Validation Warnings",
-        content: warningsContent
+      responseText += `Validation Warnings:\n`;
+      result.validationResult.warnings.forEach(warn => {
+        responseText += `- ${warn.message}\n`;
+        if (warn.suggestion) {
+          responseText += `  Suggestion: ${warn.suggestion}\n`;
+        }
       });
+      responseText += `\n`;
     }
   }
   
   // Add phase information if available
   if (result.phase) {
-    response.failedPhase = result.phase;
-    response.content.push({
-      title: "Failed Phase",
-      content: result.phase
-    });
+    responseText += `Failed Phase: ${result.phase}\n`;
   }
   
-  return response;
+  return {
+    success: false,
+    message: result.message,
+    deploymentType,
+    status: result.status,
+    error: result.error,
+    validationErrors: result.validationResult?.errors,
+    validationWarnings: result.validationResult?.warnings,
+    failedPhase: result.phase,
+    content: [
+      {
+        type: "text",
+        text: responseText
+      }
+    ]
+  };
 }

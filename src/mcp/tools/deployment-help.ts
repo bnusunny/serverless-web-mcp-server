@@ -22,32 +22,95 @@ export async function handleDeploymentHelp(params: { topic: string }) {
         topic: 'startup_script',
         title: 'Lambda Web Adapter Startup Script',
         description: 'The startup script is a critical component for running web applications on AWS Lambda with Lambda Web Adapter.',
-        sections: [
+        content: [
           {
-            title: 'Automatic Generation',
-            content: 'You can now automatically generate a startup script by providing:\n\n1. The `entryPoint` parameter pointing to your application\'s main file\n2. Setting `generateStartupScript` to `true`\n\nExample:\n```json\n{\n  "backendConfiguration": {\n    "runtime": "nodejs18.x",\n    "entryPoint": "app.js",\n    "generateStartupScript": true\n  }\n}\n```'
-          },
-          {
-            title: 'Manual Creation',
-            content: 'If you prefer to create the startup script manually, it should:\n\n1. Be executable (`chmod +x`)\n2. Set the PORT environment variable\n3. Start your application\n\nExample for Node.js:\n```bash\n#!/bin/bash\nexport PORT=8080\nexec node app.js\n```'
-          },
-          {
-            title: 'Common Issues',
-            content: '- **Entry point not found**: Ensure your entry point file exists in the built artifacts directory\n- **Script not executable**: If creating manually, run `chmod +x bootstrap`\n- **Wrong runtime**: Make sure you\'re using the correct runtime for your application'
-          },
-          {
-            title: 'Supported Runtimes',
-            content: '- Node.js: nodejs14.x, nodejs16.x, nodejs18.x\n- Python: python3.7, python3.8, python3.9\n- Java: java8, java8.al2, java11\n- .NET: dotnet3.1, dotnet5.0, dotnet6\n- Go: go1.x\n- Ruby: ruby2.7'
-          }
-        ],
-        examples: [
-          {
-            title: 'Node.js Express Application',
-            content: '```json\n{\n  "deploymentType": "backend",\n  "projectName": "express-api",\n  "projectRoot": "/path/to/project",\n  "backendConfiguration": {\n    "builtArtifactsPath": "/path/to/project/dist",\n    "runtime": "nodejs18.x",\n    "entryPoint": "app.js",\n    "generateStartupScript": true\n  }\n}\n```'
-          },
-          {
-            title: 'Python Flask Application',
-            content: '```json\n{\n  "deploymentType": "backend",\n  "projectName": "flask-api",\n  "projectRoot": "/path/to/project",\n  "backendConfiguration": {\n    "builtArtifactsPath": "/path/to/project/package",\n    "runtime": "python3.9",\n    "entryPoint": "app.py",\n    "generateStartupScript": true\n  }\n}\n```'
+            type: "text",
+            text: `# Lambda Web Adapter Startup Script
+
+The startup script is a critical component for running web applications on AWS Lambda with Lambda Web Adapter.
+
+## Automatic Generation
+
+You can now automatically generate a startup script by providing:
+
+1. The \`entryPoint\` parameter pointing to your application's main file
+2. Setting \`generateStartupScript\` to \`true\`
+
+Example:
+\`\`\`json
+{
+  "backendConfiguration": {
+    "runtime": "nodejs18.x",
+    "entryPoint": "app.js",
+    "generateStartupScript": true
+  }
+}
+\`\`\`
+
+## Manual Creation
+
+If you prefer to create the startup script manually, it should:
+
+1. Be executable (\`chmod +x\`)
+2. Set the PORT environment variable
+3. Start your application
+
+Example for Node.js:
+\`\`\`bash
+#!/bin/bash
+export PORT=8080
+exec node app.js
+\`\`\`
+
+## Common Issues
+
+- **Entry point not found**: Ensure your entry point file exists in the built artifacts directory
+- **Script not executable**: If creating manually, run \`chmod +x bootstrap\`
+- **Wrong runtime**: Make sure you're using the correct runtime for your application
+
+## Supported Runtimes
+
+- Node.js: nodejs14.x, nodejs16.x, nodejs18.x
+- Python: python3.7, python3.8, python3.9
+- Java: java8, java8.al2, java11
+- .NET: dotnet3.1, dotnet5.0, dotnet6
+- Go: go1.x
+- Ruby: ruby2.7
+
+## Examples
+
+### Node.js Express Application
+
+\`\`\`json
+{
+  "deploymentType": "backend",
+  "projectName": "express-api",
+  "projectRoot": "/path/to/project",
+  "backendConfiguration": {
+    "builtArtifactsPath": "/path/to/project/dist",
+    "runtime": "nodejs18.x",
+    "entryPoint": "app.js",
+    "generateStartupScript": true
+  }
+}
+\`\`\`
+
+### Python Flask Application
+
+\`\`\`json
+{
+  "deploymentType": "backend",
+  "projectName": "flask-api",
+  "projectRoot": "/path/to/project",
+  "backendConfiguration": {
+    "builtArtifactsPath": "/path/to/project/package",
+    "runtime": "python3.9",
+    "entryPoint": "app.py",
+    "generateStartupScript": true
+  }
+}
+\`\`\`
+`
           }
         ]
       };
@@ -57,28 +120,73 @@ export async function handleDeploymentHelp(params: { topic: string }) {
         topic: 'artifacts_path',
         title: 'Built Artifacts Requirements',
         description: 'The built artifacts path should contain all the files needed to run your application.',
-        sections: [
+        content: [
           {
-            title: 'Requirements',
-            content: '- Must include all dependencies\n- Must be built for the target runtime\n- Must include the startup script or entry point file\n- Must be ready for execution without additional build steps'
-          },
-          {
-            title: 'Node.js Example',
-            content: 'Build commands:\n```bash\nnpm install\nnpm run build\n```\n\nTypical path: `./dist`\n\npackage.json:\n```json\n{\n  "scripts": {\n    "build": "tsc && cp package.json dist/ && cd dist && npm install --production"\n  }\n}\n```'
-          },
-          {
-            title: 'Python Example',
-            content: 'Build commands:\n```bash\npip install -r requirements.txt -t ./package\ncp *.py ./package/\n```\n\nTypical path: `./package`'
-          }
-        ],
-        examples: [
-          {
-            title: 'Node.js Project',
-            content: '```json\n{\n  "backendConfiguration": {\n    "builtArtifactsPath": "/path/to/project/dist",\n    "runtime": "nodejs18.x"\n  }\n}\n```'
-          },
-          {
-            title: 'Python Project',
-            content: '```json\n{\n  "backendConfiguration": {\n    "builtArtifactsPath": "/path/to/project/package",\n    "runtime": "python3.9"\n  }\n}\n```'
+            type: "text",
+            text: `# Built Artifacts Requirements
+
+The built artifacts path should contain all the files needed to run your application.
+
+## Requirements
+
+- Must include all dependencies
+- Must be built for the target runtime
+- Must include the startup script or entry point file
+- Must be ready for execution without additional build steps
+
+## Node.js Example
+
+Build commands:
+\`\`\`bash
+npm install
+npm run build
+\`\`\`
+
+Typical path: \`./dist\`
+
+package.json:
+\`\`\`json
+{
+  "scripts": {
+    "build": "tsc && cp package.json dist/ && cd dist && npm install --production"
+  }
+}
+\`\`\`
+
+## Python Example
+
+Build commands:
+\`\`\`bash
+pip install -r requirements.txt -t ./package
+cp *.py ./package/
+\`\`\`
+
+Typical path: \`./package\`
+
+## Examples
+
+### Node.js Project
+
+\`\`\`json
+{
+  "backendConfiguration": {
+    "builtArtifactsPath": "/path/to/project/dist",
+    "runtime": "nodejs18.x"
+  }
+}
+\`\`\`
+
+### Python Project
+
+\`\`\`json
+{
+  "backendConfiguration": {
+    "builtArtifactsPath": "/path/to/project/package",
+    "runtime": "python3.9"
+  }
+}
+\`\`\`
+`
           }
         ]
       };
@@ -88,24 +196,41 @@ export async function handleDeploymentHelp(params: { topic: string }) {
         topic: 'permissions',
         title: 'File Permissions Requirements',
         description: 'AWS Lambda requires specific file permissions for your application.',
-        sections: [
+        content: [
           {
-            title: 'Requirements',
-            content: '- Startup script must have executable permissions (chmod +x)\n- All files should be readable\n- Directory permissions should allow Lambda to access your files'
-          },
-          {
-            title: 'Useful Commands',
-            content: '- Make file executable: `chmod +x filename`\n- Check file permissions: `ls -la filename`\n- Set correct permissions recursively: `find . -type f -exec chmod 644 {} \\; && find . -type d -exec chmod 755 {} \\;`'
-          }
-        ],
-        examples: [
-          {
-            title: 'Making a Script Executable',
-            content: '```bash\nchmod +x bootstrap\n```'
-          },
-          {
-            title: 'Checking Permissions',
-            content: '```bash\nls -la bootstrap\n# Should show something like:\n# -rwxr-xr-x 1 user group 123 Jan 1 12:00 bootstrap\n```'
+            type: "text",
+            text: `# File Permissions Requirements
+
+AWS Lambda requires specific file permissions for your application.
+
+## Requirements
+
+- Startup script must have executable permissions (chmod +x)
+- All files should be readable
+- Directory permissions should allow Lambda to access your files
+
+## Useful Commands
+
+- Make file executable: \`chmod +x filename\`
+- Check file permissions: \`ls -la filename\`
+- Set correct permissions recursively: \`find . -type f -exec chmod 644 {} \\; && find . -type d -exec chmod 755 {} \\;\`
+
+## Examples
+
+### Making a Script Executable
+
+\`\`\`bash
+chmod +x bootstrap
+\`\`\`
+
+### Checking Permissions
+
+\`\`\`bash
+ls -la bootstrap
+# Should show something like:
+# -rwxr-xr-x 1 user group 123 Jan 1 12:00 bootstrap
+\`\`\`
+`
           }
         ]
       };
@@ -115,28 +240,59 @@ export async function handleDeploymentHelp(params: { topic: string }) {
         topic: 'project_structure',
         title: 'Project Structure Requirements',
         description: 'The deployment tool expects a specific project structure.',
-        sections: [
+        content: [
           {
-            title: 'Backend Projects',
-            content: 'Backend projects should have:\n- Source code files\n- Built artifacts directory (e.g., dist, build, package)\n- Executable startup script in the artifacts directory\n- All dependencies included in the artifacts directory'
-          },
-          {
-            title: 'Frontend Projects',
-            content: 'Frontend projects should have:\n- Built static assets directory (e.g., build, dist, public)\n- index.html in the root of the assets directory\n- All CSS, JS, and other assets included'
-          },
-          {
-            title: 'Fullstack Projects',
-            content: 'Fullstack projects should have separate backend and frontend directories, each following their respective structure requirements.'
-          }
-        ],
-        examples: [
-          {
-            title: 'Backend Project Structure',
-            content: '```\nproject/\n├── src/            # Source code files\n├── dist/           # Built artifacts\n│   ├── bootstrap   # Executable startup script\n│   ├── index.js    # Application code\n│   └── node_modules/  # Dependencies\n└── package.json    # Project configuration\n```'
-          },
-          {
-            title: 'Frontend Project Structure',
-            content: '```\nproject/\n├── src/            # Source code files\n└── build/          # Built static assets\n    ├── index.html  # Main HTML file\n    └── static/      # Static assets\n        ├── css/     # Stylesheets\n        ├── js/      # JavaScript files\n        └── media/   # Images and other media\n```'
+            type: "text",
+            text: `# Project Structure Requirements
+
+The deployment tool expects a specific project structure.
+
+## Backend Projects
+
+Backend projects should have:
+- Source code files
+- Built artifacts directory (e.g., dist, build, package)
+- Executable startup script in the artifacts directory
+- All dependencies included in the artifacts directory
+
+## Frontend Projects
+
+Frontend projects should have:
+- Built static assets directory (e.g., build, dist, public)
+- index.html in the root of the assets directory
+- All CSS, JS, and other assets included
+
+## Fullstack Projects
+
+Fullstack projects should have separate backend and frontend directories, each following their respective structure requirements.
+
+## Examples
+
+### Backend Project Structure
+
+\`\`\`
+project/
+├── src/            # Source code files
+├── dist/           # Built artifacts
+│   ├── bootstrap   # Executable startup script
+│   ├── index.js    # Application code
+│   └── node_modules/  # Dependencies
+└── package.json    # Project configuration
+\`\`\`
+
+### Frontend Project Structure
+
+\`\`\`
+project/
+├── src/            # Source code files
+└── build/          # Built static assets
+    ├── index.html  # Main HTML file
+    └── static/      # Static assets
+        ├── css/     # Stylesheets
+        ├── js/      # JavaScript files
+        └── media/   # Images and other media
+\`\`\`
+`
           }
         ]
       };
@@ -146,28 +302,87 @@ export async function handleDeploymentHelp(params: { topic: string }) {
         topic: 'database',
         title: 'Database Configuration',
         description: 'The deploy tool can create and configure database resources like DynamoDB tables as part of your deployment.',
-        sections: [
+        content: [
           {
-            title: 'Capabilities',
-            content: '- Create new DynamoDB tables with specified schema\n- Configure table capacity (on-demand or provisioned)\n- Set up primary keys and attribute definitions\n- Integrate the database with your application'
-          },
-          {
-            title: 'DynamoDB Configuration',
-            content: 'Example DynamoDB configuration:\n```json\n{\n  "databaseConfiguration": {\n    "tableName": "Users",\n    "attributeDefinitions": [\n      { "name": "id", "type": "S" },\n      { "name": "email", "type": "S" }\n    ],\n    "keySchema": [\n      { "name": "id", "type": "HASH" },\n      { "name": "email", "type": "RANGE" }\n    ],\n    "billingMode": "PAY_PER_REQUEST"\n  }\n}\n```'
-          },
-          {
-            title: 'Notes',
-            content: '- The tableName is required and must be unique within your AWS account in the specified region\n- attributeDefinitions define the data types for your attributes (S=String, N=Number, B=Binary)\n- keySchema defines your primary key (HASH) and sort key (RANGE) if applicable\n- billingMode can be PAY_PER_REQUEST (default) or PROVISIONED (requires readCapacity and writeCapacity)'
-          }
-        ],
-        examples: [
-          {
-            title: 'Simple DynamoDB Table',
-            content: '```json\n{\n  "backendConfiguration": {\n    "databaseConfiguration": {\n      "tableName": "Users",\n      "attributeDefinitions": [\n        { "name": "id", "type": "S" }\n      ],\n      "keySchema": [\n        { "name": "id", "type": "HASH" }\n      ]\n    }\n  }\n}\n```'
-          },
-          {
-            title: 'DynamoDB Table with Composite Key',
-            content: '```json\n{\n  "backendConfiguration": {\n    "databaseConfiguration": {\n      "tableName": "UserPosts",\n      "attributeDefinitions": [\n        { "name": "userId", "type": "S" },\n        { "name": "postId", "type": "S" }\n      ],\n      "keySchema": [\n        { "name": "userId", "type": "HASH" },\n        { "name": "postId", "type": "RANGE" }\n      ]\n    }\n  }\n}\n```'
+            type: "text",
+            text: `# Database Configuration
+
+The deploy tool can create and configure database resources like DynamoDB tables as part of your deployment.
+
+## Capabilities
+
+- Create new DynamoDB tables with specified schema
+- Configure table capacity (on-demand or provisioned)
+- Set up primary keys and attribute definitions
+- Integrate the database with your application
+
+## DynamoDB Configuration
+
+Example DynamoDB configuration:
+\`\`\`json
+{
+  "databaseConfiguration": {
+    "tableName": "Users",
+    "attributeDefinitions": [
+      { "name": "id", "type": "S" },
+      { "name": "email", "type": "S" }
+    ],
+    "keySchema": [
+      { "name": "id", "type": "HASH" },
+      { "name": "email", "type": "RANGE" }
+    ],
+    "billingMode": "PAY_PER_REQUEST"
+  }
+}
+\`\`\`
+
+## Notes
+
+- The tableName is required and must be unique within your AWS account in the specified region
+- attributeDefinitions define the data types for your attributes (S=String, N=Number, B=Binary)
+- keySchema defines your primary key (HASH) and sort key (RANGE) if applicable
+- billingMode can be PAY_PER_REQUEST (default) or PROVISIONED (requires readCapacity and writeCapacity)
+
+## Examples
+
+### Simple DynamoDB Table
+
+\`\`\`json
+{
+  "backendConfiguration": {
+    "databaseConfiguration": {
+      "tableName": "Users",
+      "attributeDefinitions": [
+        { "name": "id", "type": "S" }
+      ],
+      "keySchema": [
+        { "name": "id", "type": "HASH" }
+      ]
+    }
+  }
+}
+\`\`\`
+
+### DynamoDB Table with Composite Key
+
+\`\`\`json
+{
+  "backendConfiguration": {
+    "databaseConfiguration": {
+      "tableName": "UserPosts",
+      "attributeDefinitions": [
+        { "name": "userId", "type": "S" },
+        { "name": "postId", "type": "S" }
+      ],
+      "keySchema": [
+        { "name": "userId", "type": "HASH" },
+        { "name": "postId", "type": "RANGE" }
+      ]
+    }
+  }
+}
+\`\`\`
+`
           }
         ]
       };
@@ -177,28 +392,74 @@ export async function handleDeploymentHelp(params: { topic: string }) {
         topic: 'general',
         title: 'General Deployment Information',
         description: 'Overview of the deployment process and requirements.',
-        sections: [
+        content: [
           {
-            title: 'Deployment Types',
-            content: '- **backend**: Deploys a backend service using API Gateway and Lambda\n- **frontend**: Deploys a frontend application using S3 and CloudFront\n- **fullstack**: Deploys both backend and frontend components'
-          },
-          {
-            title: 'General Steps',
-            content: '1. Build your application\n2. Ensure your startup script is executable (for backend)\n3. Configure the deployment parameters\n4. Run the deployment tool\n5. Wait for the deployment to complete\n6. Access your deployed application using the provided URL'
-          },
-          {
-            title: 'AWS Resources Created',
-            content: 'Backend:\n- AWS Lambda function with your application code\n- API Gateway REST API or HTTP API\n- IAM roles and policies for Lambda execution\n- CloudWatch Log groups for monitoring\n- DynamoDB tables (if database configuration is provided)\n\nFrontend:\n- S3 bucket configured for static website hosting\n- CloudFront distribution for content delivery (optional)\n- Route 53 records for custom domains (if configured)'
-          }
-        ],
-        examples: [
-          {
-            title: 'Backend Deployment',
-            content: '```json\n{\n  "deploymentType": "backend",\n  "projectName": "my-api",\n  "projectRoot": "/path/to/project",\n  "backendConfiguration": {\n    "builtArtifactsPath": "/path/to/built/artifacts",\n    "runtime": "nodejs18.x",\n    "entryPoint": "app.js",\n    "generateStartupScript": true\n  }\n}\n```'
-          },
-          {
-            title: 'Frontend Deployment',
-            content: '```json\n{\n  "deploymentType": "frontend",\n  "projectName": "my-website",\n  "projectRoot": "/path/to/project",\n  "frontendConfiguration": {\n    "builtAssetsPath": "/path/to/built/assets",\n    "indexDocument": "index.html"\n  }\n}\n```'
+            type: "text",
+            text: `# General Deployment Information
+
+Overview of the deployment process and requirements.
+
+## Deployment Types
+
+- **backend**: Deploys a backend service using API Gateway and Lambda
+- **frontend**: Deploys a frontend application using S3 and CloudFront
+- **fullstack**: Deploys both backend and frontend components
+
+## General Steps
+
+1. Build your application
+2. Ensure your startup script is executable (for backend)
+3. Configure the deployment parameters
+4. Run the deployment tool
+5. Wait for the deployment to complete
+6. Access your deployed application using the provided URL
+
+## AWS Resources Created
+
+Backend:
+- AWS Lambda function with your application code
+- API Gateway REST API or HTTP API
+- IAM roles and policies for Lambda execution
+- CloudWatch Log groups for monitoring
+- DynamoDB tables (if database configuration is provided)
+
+Frontend:
+- S3 bucket configured for static website hosting
+- CloudFront distribution for content delivery (optional)
+- Route 53 records for custom domains (if configured)
+
+## Examples
+
+### Backend Deployment
+
+\`\`\`json
+{
+  "deploymentType": "backend",
+  "projectName": "my-api",
+  "projectRoot": "/path/to/project",
+  "backendConfiguration": {
+    "builtArtifactsPath": "/path/to/built/artifacts",
+    "runtime": "nodejs18.x",
+    "entryPoint": "app.js",
+    "generateStartupScript": true
+  }
+}
+\`\`\`
+
+### Frontend Deployment
+
+\`\`\`json
+{
+  "deploymentType": "frontend",
+  "projectName": "my-website",
+  "projectRoot": "/path/to/project",
+  "frontendConfiguration": {
+    "builtAssetsPath": "/path/to/built/assets",
+    "indexDocument": "index.html"
+  }
+}
+\`\`\`
+`
           }
         ]
       };
@@ -206,7 +467,13 @@ export async function handleDeploymentHelp(params: { topic: string }) {
     default:
       return {
         error: `Help topic '${params.topic}' not found`,
-        availableTopics: ['startup_script', 'artifacts_path', 'permissions', 'project_structure', 'database', 'general']
+        availableTopics: ['startup_script', 'artifacts_path', 'permissions', 'project_structure', 'database', 'general'],
+        content: [
+          {
+            type: "text",
+            text: `Help topic '${params.topic}' not found. Available topics: startup_script, artifacts_path, permissions, project_structure, database, general`
+          }
+        ]
       };
   }
 }
