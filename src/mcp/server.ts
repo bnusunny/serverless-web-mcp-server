@@ -1,7 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
-import tools, {McpTool} from "./tools/index.js";
+import { toolDefinitions } from "./tools/index.js";
 import resources, { McpResource } from "./resources/index.js";
 import express from "express";
 import cors from "cors";
@@ -33,8 +33,8 @@ export function createMcpServer(): McpServer {
   });
 
   // Register tools with their proper Zod schemas
-  tools.forEach((tool: McpTool) => {
-    server.tool(tool.name, tool.description, tool.parameters, tool.handler);
+  toolDefinitions.forEach((tool) => {
+    server.tool(tool.name, tool.description, tool.parameters.shape, tool.handler);
   });
 
   // Register resources
@@ -64,8 +64,17 @@ export async function startStdioServer(server: McpServer): Promise<void> {
     
     // Add debug logging for messages
     const originalSend = stdioTransport.send;
-    stdioTransport.send = async function(message) {
-      logger.debug(`[MCP OUTGOING] ${JSON.stringify(message)}`);
+    stdioTransport.send = async function(message: any) {
+      logger.debug(`[MCP OUTGOING] ${JSON.stringify(message)}`, { messageType: 'outgoing' });
+      
+      // Special handling for needs_input responses to ensure they're properly sent
+      if (message.result && message.result.status === 'needs_input') {
+        logger.info(`Sending needs_input response with inputKey: ${message.result.inputKey}`, { 
+          responseType: 'needs_input',
+          inputKey: message.result.inputKey
+        });
+      }
+      
       return originalSend.call(this, message);
     };
     
@@ -140,8 +149,22 @@ export async function startHttpServer(server: McpServer, port: number): Promise<
     
     // Add debug logging for messages
     const originalSend = transport.send;
-    transport.send = async function(message) {
-      logger.debug(`[MCP OUTGOING][${sessionId}] ${JSON.stringify(message)}`);
+    transport.send = async function(message: any) {
+      logger.debug(`[MCP OUTGOING][${sessionId}]`, { 
+        messageType: 'outgoing',
+        sessionId,
+        message
+      });
+      
+      // Special handling for needs_input responses to ensure they're properly sent
+      if (message.result && message.result.status === 'needs_input') {
+        logger.info(`Sending needs_input response with inputKey: ${message.result.inputKey}`, { 
+          responseType: 'needs_input',
+          inputKey: message.result.inputKey,
+          sessionId
+        });
+      }
+      
       return originalSend.call(this, message);
     };
     
@@ -243,7 +266,7 @@ export async function startHttpServer(server: McpServer, port: number): Promise<
   // Add an endpoint to get the log file path
   app.get("/logs", (req, res) => {
     res.status(200).json({ 
-      logFile: logger.getLogFilePath(),
+      logFile: (logger as any).getLogFilePath(),
       message: "Use this path to view the server logs"
     });
   });

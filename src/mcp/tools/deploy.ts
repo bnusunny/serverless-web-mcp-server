@@ -1,227 +1,198 @@
 /**
- * Deploy Tool Implementation
+ * Deploy tool implementation
  * 
- * MCP tool for deploying web applications to AWS serverless infrastructure.
+ * This tool deploys web applications to AWS serverless infrastructure.
  */
 
-import { deploy } from '../../deployment/deploy-service.js';
+import * as path from 'path';
+import * as fs from 'fs';
+import { deploy, getDeploymentResult } from '../../deployment/deploy-service.js';
+import { uploadFrontendAssets } from '../../deployment/frontend-upload.js';
 import { DeployToolParams, DeployToolResult } from '../../types/index.js';
-import { McpTool } from '../tools/index.js';
-import { z } from 'zod';
 import { logger } from '../../utils/logger.js';
 
 /**
  * Deploy tool handler
  * 
- * @param params - Tool parameters
- * @returns - Tool result
+ * @param params - Deploy tool parameters
+ * @returns - Deploy tool result
  */
-async function handleDeploy(params: DeployToolParams): Promise<any> {
+export async function handleDeploy(params: DeployToolParams): Promise<DeployToolResult> {
+  logger.info(`[DEPLOY TOOL] Starting deployment with params: ${JSON.stringify(params)}`);
+  
   try {
-    logger.info(`[DEPLOY TOOL START] Received deploy request for ${params.configuration?.projectName || 'unknown project'}`);
-    logger.info(`Deploy parameters: ${JSON.stringify(params, null, 2)}`);
-    
     // Validate required parameters
-    if (!params.deploymentType) {
-      logger.error('Missing required parameter: deploymentType');
-      return {
-        content: [],
-        status: 'error',
-        message: 'Missing required parameter: deploymentType'
-      };
+    validateParams(params);
+    
+    // Deploy the application
+    const deployResult = await deploy({
+      deploymentType: params.deploymentType,
+      projectName: params.projectName,
+      projectRoot: params.projectRoot,
+      region: params.region,
+      backendConfiguration: params.backendConfiguration,
+      frontendConfiguration: params.frontendConfiguration
+    });
+    
+    // If frontend deployment, upload assets
+    if ((params.deploymentType === 'frontend' || params.deploymentType === 'fullstack') && 
+        params.frontendConfiguration && deployResult.status === 'success') {
+      await uploadFrontendAssets({
+        projectName: params.projectName,
+        region: params.region,
+        frontendConfiguration: params.frontendConfiguration
+      }, deployResult);
     }
     
-    if (!params.source || !params.source.path) {
-      logger.error('Missing required parameter: source.path');
-      return {
-        content: [],
-        status: 'error',
-        message: 'Missing required parameter: source.path'
-      };
-    }
+    // Get final deployment result
+    const finalResult = await getDeploymentResult(params.projectName);
     
-    if (!params.configuration || !params.configuration.projectName) {
-      logger.error('Missing required parameter: configuration.projectName');
-      return {
-        content: [],
-        status: 'error',
-        message: 'Missing required parameter: configuration.projectName'
-      };
-    }
-    
-    // Prompt for framework if not provided
-    if (!params.framework && !params.configuration.backendConfiguration?.framework) {
-      logger.info('Framework not provided, requesting input');
-      return {
-        content: [],
-        status: 'needs_input',
-        message: 'Please specify the web framework being used (e.g., express, flask, fastapi, nextjs)',
-        inputKey: 'framework'
-      };
-    }
-    
-    // Prompt for entry point if not provided
-    if ((params.deploymentType === 'backend' || params.deploymentType === 'fullstack') && 
-        !params.configuration.backendConfiguration?.entryPoint) {
-      logger.info('Entry point not provided, requesting input');
-      return {
-        content: [],
-        status: 'needs_input',
-        message: 'Please specify the entry point for your application (e.g., app.js, app.py, main:app)',
-        inputKey: 'entryPoint',
-        context: 'This will be used to generate the bootstrap file for Lambda Web Adapter.'
-      };
-    }
-    
-    // Set framework in configuration if provided as top-level parameter
-    if (params.framework && params.configuration.backendConfiguration) {
-      logger.info(`Setting framework in configuration: ${params.framework}`);
-      params.configuration.backendConfiguration.framework = params.framework;
-    }
-    
-    // Set entry point in configuration if provided as input
-    if (params.entryPoint && params.configuration.backendConfiguration) {
-      logger.info(`Setting entry point in configuration: ${params.entryPoint}`);
-      params.configuration.backendConfiguration.entryPoint = params.entryPoint;
-    }
-    
-    // Add default backend configuration if not provided
-    if ((params.deploymentType === 'backend' || params.deploymentType === 'fullstack') && 
-        !params.configuration.backendConfiguration) {
-      logger.info('Adding default backend configuration');
-      params.configuration.backendConfiguration = {
-        runtime: 'nodejs18.x',
-        memorySize: 512,
-        timeout: 30,
-        architecture: 'x86_64',
-        stage: 'prod',
-        cors: true
-      };
-    }
-    
-    logger.info(`[DEPLOY TOOL] Preparing to start deployment for ${params.configuration.projectName}`);
-    
-    // Create a response object immediately
-    const response = {
+    // Create response
+    const response: DeployToolResult = {
       content: [
         {
-          type: 'text',
-          text: `Starting deployment of ${params.deploymentType} application ${params.configuration.projectName}. This may take several minutes.`
-        },
-        {
-          type: 'text',
-          text: `You can check the status with the deployment:${params.configuration.projectName} resource.`
+          type: "text",
+          text: `Deployment ${finalResult.status === 'success' ? 'completed successfully' : 'failed'}`
         }
       ],
-      status: 'preparing',
-      message: `Deployment preparation started. Check status with deployment:${params.configuration.projectName} resource.`,
-      stackName: params.configuration.projectName
+      status: finalResult.status === 'success' ? 'success' : 'error',
+      message: finalResult.message,
+      stackName: finalResult.stackName
     };
     
-    // Start the deployment process in the background using setTimeout with 0ms delay
-    // This ensures the event loop completes and the response is sent to the client
-    // before starting the long-running deployment process
-    setTimeout(async () => {
-      try {
-        logger.info(`[DEPLOY TOOL] Starting deployment process for ${params.configuration.projectName} in background`);
-        const result = await deploy(params);
-        logger.info(`[DEPLOY TOOL] Background deployment process completed with status: ${result.status}`);
-      } catch (error) {
-        logger.error(`[DEPLOY TOOL ERROR] Background deployment process failed:`, error);
-      }
-    }, 0);
+    // Add URLs if available
+    if (finalResult.apiUrl) {
+      response.apiUrl = finalResult.apiUrl;
+      response.content.push({
+        type: "text",
+        text: `API URL: ${finalResult.apiUrl}`
+      });
+    }
     
-    logger.info(`[DEPLOY TOOL COMPLETE] Successfully initiated deploy request for ${params.configuration.projectName}`);
-    logger.info(`Returning immediate response: ${JSON.stringify(response)}`);
+    if (finalResult.websiteUrl) {
+      response.websiteUrl = finalResult.websiteUrl;
+      response.content.push({
+        type: "text",
+        text: `Website URL: ${finalResult.websiteUrl}`
+      });
+    }
     
-    // Return the response immediately, before the deployment actually starts
     return response;
-  } catch (error) {
-    logger.error(`[DEPLOY TOOL ERROR] Deploy tool error for ${params.configuration?.projectName || 'unknown project'}:`, error);
+  } catch (error: any) {
+    logger.error(`[DEPLOY TOOL ERROR] ${error.message}`);
+    
     return {
       content: [
         {
-          type: 'text',
-          text: `Deployment failed: ${error instanceof Error ? error.message : String(error)}`
+          type: "text",
+          text: `Deployment failed: ${error.message}`
         }
       ],
       status: 'error',
-      message: `Deployment failed: ${error instanceof Error ? error.message : String(error)}`
+      message: `Deployment failed: ${error.message}`
     };
   }
 }
 
-// Define Zod schemas for parameter validation
-const deploymentTypeSchema = z.enum(['backend', 'frontend', 'fullstack']);
-
-const sourceSchema = z.object({
-  path: z.string().describe('Path to source code')
-}).describe('Source code location');
-
-const backendConfigSchema = z.object({
-  runtime: z.string().default('nodejs18.x').describe('Lambda runtime'),
-  framework: z.string().optional().describe('Backend framework'),
-  entryPoint: z.string().optional().describe('Entry point file or module'),
-  memorySize: z.number().default(512).describe('Lambda memory size'),
-  timeout: z.number().default(30).describe('Lambda timeout'),
-  architecture: z.enum(['x86_64', 'arm64']).default('x86_64').describe('Lambda architecture'),
-  stage: z.string().default('prod').describe('API Gateway stage'),
-  cors: z.boolean().default(true).describe('Enable CORS'),
-  environment: z.record(z.string()).optional().describe('Environment variables')
-}).describe('Backend configuration');
-
-const frontendConfigSchema = z.object({
-  type: z.enum(['static', 'react', 'vue', 'angular', 'nextjs']).default('static').describe('Frontend type'),
-  indexDocument: z.string().default('index.html').describe('Index document'),
-  errorDocument: z.string().default('error.html').describe('Error document'),
-  customDomain: z.string().optional().describe('Custom domain'),
-  certificateArn: z.string().optional().describe('ACM certificate ARN')
-}).describe('Frontend configuration');
-
-const attributeDefSchema = z.object({
-  name: z.string().describe('Attribute name'),
-  type: z.enum(['S', 'N', 'B']).describe('Attribute type')
-});
-
-const keySchemaSchema = z.object({
-  name: z.string().describe('Attribute name'),
-  type: z.enum(['HASH', 'RANGE']).describe('Key type')
-});
-
-const databaseConfigSchema = z.object({
-  tableName: z.string().describe('DynamoDB table name'),
-  billingMode: z.enum(['PROVISIONED', 'PAY_PER_REQUEST']).default('PAY_PER_REQUEST').describe('DynamoDB billing mode'),
-  attributeDefinitions: z.array(attributeDefSchema).describe('DynamoDB attribute definitions'),
-  keySchema: z.array(keySchemaSchema).describe('DynamoDB key schema'),
-  readCapacity: z.number().optional().describe('Read capacity units (for PROVISIONED)'),
-  writeCapacity: z.number().optional().describe('Write capacity units (for PROVISIONED)')
-}).describe('Database configuration');
-
-const configurationSchema = z.object({
-  projectName: z.string().describe('Project name'),
-  region: z.string().default('us-east-1').describe('AWS region'),
-  backendConfiguration: backendConfigSchema.optional(),
-  frontendConfiguration: frontendConfigSchema.optional(),
-  databaseConfiguration: databaseConfigSchema.optional()
-}).describe('Deployment configuration');
-
-// Define the parameters schema for the deploy tool
-const deployParamsSchema = {
-  deploymentType: deploymentTypeSchema.describe('Type of deployment (backend, frontend, fullstack)'),
-  source: sourceSchema,
-  framework: z.string().optional().describe('Web framework (express, flask, fastapi, nextjs, etc.)'),
-  entryPoint: z.string().optional().describe('Entry point for the application'),
-  configuration: configurationSchema
-};
-
 /**
- * Deploy tool definition
+ * Validate deploy tool parameters
+ * 
+ * @param params - Deploy tool parameters
  */
-const deployTool: McpTool = {
-  name: 'deploy',
-  description: 'Deploy web applications to AWS serverless infrastructure',
-  parameters: deployParamsSchema,
-  handler: handleDeploy
-};
-
-export default deployTool;
+function validateParams(params: DeployToolParams): void {
+  // Check required parameters
+  if (!params.deploymentType) {
+    throw new Error('deploymentType is required');
+  }
+  
+  if (!params.projectName) {
+    throw new Error('projectName is required');
+  }
+  
+  if (!params.projectRoot) {
+    throw new Error('projectRoot is required');
+  }
+  
+  // Check if project root exists
+  if (!fs.existsSync(params.projectRoot)) {
+    throw new Error(`Project root directory not found: ${params.projectRoot}`);
+  }
+  
+  // Check deployment type specific parameters
+  if (params.deploymentType === 'backend' || params.deploymentType === 'fullstack') {
+    if (!params.backendConfiguration) {
+      throw new Error('backendConfiguration is required for backend or fullstack deployments');
+    }
+    
+    if (!params.backendConfiguration.builtArtifactsPath) {
+      throw new Error('backendConfiguration.builtArtifactsPath is required');
+    }
+    
+    if (!params.backendConfiguration.runtime) {
+      throw new Error('backendConfiguration.runtime is required');
+    }
+    
+    if (!params.backendConfiguration.startupScript) {
+      throw new Error('backendConfiguration.startupScript is required. It must be a single executable script that takes no parameters.');
+    }
+    
+    // Check if startup script exists
+    const startupScriptPath = path.join(params.backendConfiguration.builtArtifactsPath, params.backendConfiguration.startupScript);
+    if (!fs.existsSync(startupScriptPath)) {
+      throw new Error(`Startup script not found: ${startupScriptPath}`);
+    }
+    
+    // Check if startup script will be executable in Lambda (Linux) environment
+    try {
+      const stats = fs.statSync(startupScriptPath);
+      const isExecutable = !!(stats.mode & 0o111); // Check if any execute bit is set
+      
+      if (!isExecutable) {
+        // Script doesn't have execute permissions
+        const isWindows = process.platform === 'win32';
+        
+        if (isWindows) {
+          // On Windows, warn that the script needs to be made executable for Lambda
+          logger.warn(`Warning: The startup script '${params.backendConfiguration.startupScript}' doesn't have execute permissions.`);
+          logger.warn(`Since AWS Lambda runs on Linux, you should ensure the script has execute permissions.`);
+          logger.warn(`If deploying from Windows, you may need to add a chmod +x command in your build process.`);
+          
+          // Check if it's a shell script without extension or with .sh extension
+          if (!path.extname(startupScriptPath) || startupScriptPath.endsWith('.sh')) {
+            logger.warn(`For shell scripts, consider adding "#!/bin/sh" or "#!/bin/bash" as the first line.`);
+          }
+        } else {
+          // On Unix systems, we can be more direct about fixing permissions
+          throw new Error(`Startup script is not executable: ${startupScriptPath}. AWS Lambda requires executable permissions. Please run 'chmod +x ${startupScriptPath}'`);
+        }
+      }
+      
+      // If it's a shell script, check for shebang
+      if (!path.extname(startupScriptPath) || startupScriptPath.endsWith('.sh')) {
+        try {
+          const fileContent = fs.readFileSync(startupScriptPath, 'utf8');
+          const firstLine = fileContent.split('\n')[0];
+          
+          if (!firstLine.startsWith('#!')) {
+            logger.warn(`Warning: The startup script '${params.backendConfiguration.startupScript}' doesn't have a shebang line.`);
+            logger.warn(`For shell scripts in Lambda, add "#!/bin/sh" or "#!/bin/bash" as the first line.`);
+          }
+        } catch (readError) {
+          logger.warn(`Could not read startup script to check for shebang: ${readError}`);
+        }
+      }
+    } catch (error: any) {
+      throw new Error(`Failed to check if startup script is executable: ${error.message}`);
+    }
+  }
+  
+  if (params.deploymentType === 'frontend' || params.deploymentType === 'fullstack') {
+    if (!params.frontendConfiguration) {
+      throw new Error('frontendConfiguration is required for frontend or fullstack deployments');
+    }
+    
+    if (!params.frontendConfiguration.builtAssetsPath) {
+      throw new Error('frontendConfiguration.builtAssetsPath is required');
+    }
+  }
+}

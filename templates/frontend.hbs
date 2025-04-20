@@ -8,7 +8,6 @@ Resources:
     Type: AWS::S3::Bucket
     Properties:
       AccessControl: Private
-      # No WebsiteConfiguration since we're using CloudFront with OAC
       CorsConfiguration:
         CorsRules:
           - AllowedHeaders:
@@ -52,7 +51,7 @@ Resources:
     Properties:
       DistributionConfig:
         Enabled: true
-        DefaultRootObject: {{frontendConfiguration.indexDocument}}
+        DefaultRootObject: {{#ifExists frontendConfiguration.indexDocument}}{{frontendConfiguration.indexDocument}}{{else}}index.html{{/ifExists}}
         Origins:
           - DomainName: !GetAtt WebsiteBucket.RegionalDomainName
             Id: S3Origin
@@ -68,26 +67,18 @@ Resources:
             QueryString: false
             Cookies:
               Forward: none
-          {{#ifNotEquals frontendConfiguration.type "static"}}
           # SPA routing support
           FunctionAssociations:
             - EventType: viewer-request
               FunctionARN: !GetAtt RouterFunction.FunctionARN
-          {{/ifNotEquals}}
         PriceClass: PriceClass_100
         CustomErrorResponses:
-          {{#ifEquals frontendConfiguration.type "static"}}
-          - ErrorCode: 404
-            ResponseCode: 404
-            ResponsePagePath: {{frontendConfiguration.errorDocument}}
-          {{else}}
           - ErrorCode: 404
             ResponseCode: 200
-            ResponsePagePath: {{frontendConfiguration.indexDocument}}
+            ResponsePagePath: /{{#ifExists frontendConfiguration.indexDocument}}{{frontendConfiguration.indexDocument}}{{else}}index.html{{/ifExists}}
           - ErrorCode: 403
             ResponseCode: 200
-            ResponsePagePath: {{frontendConfiguration.indexDocument}}
-          {{/ifEquals}}
+            ResponsePagePath: /{{#ifExists frontendConfiguration.indexDocument}}{{frontendConfiguration.indexDocument}}{{else}}index.html{{/ifExists}}
         {{#ifExists frontendConfiguration.customDomain}}
         Aliases:
           - {{frontendConfiguration.customDomain}}
@@ -99,8 +90,7 @@ Resources:
           CloudFrontDefaultCertificate: true
         {{/ifExists}}
 
-  {{#ifNotEquals frontendConfiguration.type "static"}}
-  # CloudFront Function to handle SPA routing
+  # CloudFront Function for routing
   RouterFunction:
     Type: AWS::CloudFront::Function
     Properties:
@@ -111,27 +101,19 @@ Resources:
           var request = event.request;
           var uri = request.uri;
           
-          {{#ifEquals frontendConfiguration.type "react"}}
-          // React Router handling
-          {{/ifEquals}}
-          {{#ifEquals frontendConfiguration.type "vue"}}
-          // Vue Router history mode handling
-          {{/ifEquals}}
-          {{#ifEquals frontendConfiguration.type "angular"}}
-          // Angular routing handling
-          {{/ifEquals}}
-          
-          // Check whether the URI is missing a file extension
-          if (!uri.includes('.')) {
-            request.uri = '/index.html';
+          // Standard SPA routing
+          if (uri.includes('.')) {
+            return request;
           }
+          
+          // Rewrite to index.html for SPA routing
+          request.uri = '/{{#ifExists frontendConfiguration.indexDocument}}{{frontendConfiguration.indexDocument}}{{else}}index.html{{/ifExists}}';
           
           return request;
         }
       FunctionConfig:
-        Comment: "Rewrite requests to index.html for SPA routing"
+        Comment: "Rewrite requests for frontend routing"
         Runtime: cloudfront-js-1.0
-  {{/ifNotEquals}}
 
 Outputs:
   WebsiteBucket:

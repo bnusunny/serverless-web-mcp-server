@@ -1,189 +1,70 @@
-import fs from 'fs';
+/**
+ * Logger utility for the MCP server
+ */
+
+import winston from 'winston';
 import path from 'path';
 import os from 'os';
+import fs from 'fs';
 
-// Determine if we're in stdio transport mode
-const isStdioTransport = process.env.MCP_TRANSPORT === 'stdio' || 
-                         !process.env.MCP_TRANSPORT;
+// Define log directory
+const LOG_DIR = process.env.LOG_DIR || path.join(os.tmpdir(), 'serverless-web-mcp-logs');
 
-// Create a log directory in the temp directory
-const LOG_DIR = path.join(os.tmpdir(), 'serverless-web-mcp-logs');
+// Ensure log directory exists
 if (!fs.existsSync(LOG_DIR)) {
-  try {
-    fs.mkdirSync(LOG_DIR, { recursive: true });
-  } catch (error) {
-    // If we can't create the log directory, we'll fall back to no logging
-  }
+  fs.mkdirSync(LOG_DIR, { recursive: true });
 }
 
-// Create a log file with timestamp
-const LOG_FILE = path.join(LOG_DIR, `mcp-server-${new Date().toISOString().replace(/[:.]/g, '-')}.json.log`);
+// Define log file path
+const LOG_FILE = path.join(LOG_DIR, 'serverless-web-mcp.log');
 
-// Queue for log messages to avoid file system contention
-const logQueue: string[] = [];
-let isProcessingQueue = false;
+// Define structured JSON format for file logs
+const structuredFormat = winston.format.combine(
+  winston.format.timestamp(),
+  winston.format.json()
+);
 
-/**
- * Process the log queue asynchronously
- */
-async function processLogQueue() {
-  if (isProcessingQueue || logQueue.length === 0) return;
-  
-  isProcessingQueue = true;
-  
-  try {
-    // Take all current messages from the queue
-    const messages = [...logQueue];
-    logQueue.length = 0;
-    
-    // Write all messages at once, one JSON object per line (NDJSON format)
-    await fs.promises.appendFile(LOG_FILE, messages.join('\n') + '\n');
-  } catch (error) {
-    // If we can't write to the log file, there's not much we can do
-    // We don't want to use console.log here as it might interfere with stdio transport
-  } finally {
-    isProcessingQueue = false;
-    
-    // If more messages were added while processing, process them too
-    if (logQueue.length > 0) {
-      processLogQueue();
-    }
-  }
-}
+// Define human-readable format for console logs
+const consoleFormat = winston.format.combine(
+  winston.format.colorize(),
+  winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
+  winston.format.printf((info: any) => {
+    const { timestamp, level, message, ...rest } = info;
+    // Only include metadata if it exists and isn't empty
+    const meta = Object.keys(rest).length && 
+                 !(Object.keys(rest).length === 1 && Object.keys(rest)[0] === 'splat') 
+                 ? ` ${JSON.stringify(rest)}` : '';
+    return `${timestamp} ${level}: ${message}${meta}`;
+  })
+);
 
-/**
- * Add a message to the log queue and trigger processing
- */
-function queueLogMessage(logObject: object) {
-  logQueue.push(JSON.stringify(logObject));
-  processLogQueue();
-}
-
-/**
- * Format error objects for JSON serialization
- */
-function formatError(error: Error): object {
-  return {
-    message: error.message,
-    name: error.name,
-    stack: error.stack,
-  };
-}
-
-/**
- * Process arguments for structured logging
- */
-function processArgs(args: any[]): object {
-  if (args.length === 0) {
-    return {};
-  }
-  
-  // If there's only one argument, use it directly
-  if (args.length === 1) {
-    const arg = args[0];
-    
-    // Special handling for Error objects
-    if (arg instanceof Error) {
-      return formatError(arg);
-    }
-    
-    return arg;
-  }
-  
-  // For multiple arguments, process each one
-  return args.map(arg => {
-    if (arg instanceof Error) {
-      return formatError(arg);
-    }
-    return arg;
-  });
-}
-
-/**
- * Create a structured log entry
- */
-function createLogEntry(level: string, message: string, args: any[]): object {
-  return {
-    timestamp: new Date().toISOString(),
-    level,
-    message,
-    data: processArgs(args),
-    context: {
-      transport: isStdioTransport ? 'stdio' : 'http',
-      pid: process.pid,
-      hostname: os.hostname()
-    }
-  };
-}
-
-/**
- * Safe logger that doesn't interfere with stdio transport
- */
-export const logger = {
-  /**
-   * Log info message
-   */
-  info: (message: string, ...args: any[]) => {
-    const logObject = createLogEntry('INFO', message, args);
-    
-    // Always write to log file
-    queueLogMessage(logObject);
-    
-    // Only write to console in HTTP mode
-    if (!isStdioTransport) {
-      console.log(message, ...args);
-    }
+// Create logger with file transport using structured format
+const logger = winston.createLogger({
+  level: process.env.DEBUG ? 'debug' : 'info',
+  format: structuredFormat,
+  defaultMeta: { 
+    transport: process.env.MCP_TRANSPORT || 'stdio',
+    pid: process.pid,
+    hostname: os.hostname()
   },
+  transports: [
+    // Write to log file (always enabled)
+    new winston.transports.File({ 
+      filename: LOG_FILE,
+      format: structuredFormat
+    })
+  ]
+});
 
-  /**
-   * Log error message
-   */
-  error: (message: string, ...args: any[]) => {
-    const logObject = createLogEntry('ERROR', message, args);
-    
-    // Always write to log file
-    queueLogMessage(logObject);
-    
-    // Only write to console in HTTP mode
-    if (!isStdioTransport) {
-      console.error(message, ...args);
-    }
-  },
+// Only add console transport for HTTP mode to avoid interfering with stdio transport
+if (process.env.MCP_TRANSPORT === 'http') {
+  logger.add(new winston.transports.Console({
+    format: consoleFormat
+  }));
+}
 
-  /**
-   * Log warning message
-   */
-  warn: (message: string, ...args: any[]) => {
-    const logObject = createLogEntry('WARN', message, args);
-    
-    // Always write to log file
-    queueLogMessage(logObject);
-    
-    // Only write to console in HTTP mode
-    if (!isStdioTransport) {
-      console.warn(message, ...args);
-    }
-  },
+// Add method to get log file path
+(logger as any).getLogFilePath = () => LOG_FILE;
 
-  /**
-   * Log debug message (only if DEBUG env var is set)
-   */
-  debug: (message: string, ...args: any[]) => {
-    if (process.env.DEBUG) {
-      const logObject = createLogEntry('DEBUG', message, args);
-      
-      // Always write to log file
-      queueLogMessage(logObject);
-      
-      // Only write to console in HTTP mode
-      if (!isStdioTransport) {
-        console.debug(message, ...args);
-      }
-    }
-  },
-  
-  /**
-   * Get the path to the current log file
-   */
-  getLogFilePath: () => LOG_FILE
-};
+// Export logger
+export { logger };

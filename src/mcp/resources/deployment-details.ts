@@ -25,7 +25,7 @@ if (!fs.existsSync(DEPLOYMENT_STATUS_DIR)) {
 const deploymentDetails: McpResource = {
   name: 'deployment-details',
   uri: new ResourceTemplate("deployment:{projectName}", { list: undefined }),
-  description: 'Status and details of a specific deployment',
+  description: 'Status and details of a specific deployment. Note: When redeploying, always use the SAME deployment type (fullstack, backend, or frontend) that was used for the initial deployment to avoid data loss.',
   handler: async (uri, { projectName }, extra) => {
     if (!projectName) {
       return {

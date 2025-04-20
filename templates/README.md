@@ -7,7 +7,6 @@ This directory contains Handlebars templates for different types of deployments.
 - `backend.hbs`: Template for backend applications (Express.js, Flask, FastAPI, etc.)
 - `frontend.hbs`: Template for frontend web applications (React, Vue, Angular, static)
 - `fullstack.hbs`: Template for fullstack applications combining backend and frontend
-- `database.hbs`: Template for database resources (DynamoDB, Aurora Serverless)
 
 ## Template System
 

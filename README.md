@@ -20,7 +20,6 @@ This server implements the Model Context Protocol with the following features:
 Provides contextual information about:
 - Available deployment templates (`template:list`, `template:{name}`)
 - Existing deployments and their status (`deployment:list`, `deployment:{project-name}`)
-- Resource discovery (`mcp:resources`) - Lists all available resources
 
 ### Tools
 
@@ -28,8 +27,8 @@ Exposes deployment capabilities as tools:
 - `deploy`: Deploy web applications to AWS serverless infrastructure
 - `configure-domain`: Set up custom domains and SSL certificates
 - `provision-database`: Create and configure database resources
-- `get-logs`: Retrieve application logs
-- `get-metrics`: Fetch performance metrics
+- `get-logs`: Retrieve application logs (placeholder implementation)
+- `get-metrics`: Fetch performance metrics (placeholder implementation)
 
 ### Transport Options
 
@@ -137,7 +136,8 @@ After configuring, restart Claude for Desktop. You should see the serverless-web
 MCP clients can connect to the server at:
 
 ```
-http://localhost:3000/mcp
+http://localhost:3000/sse    # For SSE transport
+http://localhost:3000/messages    # For message handling
 ```
 
 ### Command Line Options
@@ -161,20 +161,33 @@ Environment Variables:
 
 ### Resource Discovery
 
-To discover all available resources, use the `mcp:resources` resource:
+To discover available resources and tools, use the following methods:
+
+#### List Resources
 
 ```json
 {
   "jsonrpc": "2.0",
   "id": 1,
-  "method": "resource/get",
-  "params": {
-    "uri": "mcp:resources"
-  }
+  "method": "resource/list",
+  "params": {}
 }
 ```
 
-This will return a list of all available resources, their descriptions, patterns, and examples.
+This will return a list of all available resources with their patterns and descriptions.
+
+#### List Tools
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 2,
+  "method": "tool/list",
+  "params": {}
+}
+```
+
+This will return a list of all available tools with their descriptions and parameter schemas.
 
 ### Example Tool Invocation
 
@@ -187,17 +200,17 @@ This will return a list of all available resources, their descriptions, patterns
     "name": "deploy",
     "parameters": {
       "deploymentType": "backend",
-      "source": {
-        "path": "/path/to/code"
-      },
-      "framework": "express",
-      "configuration": {
-        "projectName": "my-api",
-        "region": "us-east-1",
-        "backendConfiguration": {
-          "runtime": "nodejs18.x",
-          "memorySize": 512,
-          "timeout": 30
+      "projectName": "my-api",
+      "projectRoot": "/path/to/project",
+      "region": "us-east-1",
+      "backendConfiguration": {
+        "builtArtifactsPath": "/path/to/built/artifacts",
+        "runtime": "nodejs18.x",
+        "startupScript": "bootstrap",
+        "memorySize": 512,
+        "timeout": 30,
+        "environment": {
+          "NODE_ENV": "production"
         }
       }
     }
@@ -218,6 +231,77 @@ This will return a list of all available resources, their descriptions, patterns
 }
 ```
 
+## Deployment Parameters
+
+### Backend Deployment
+
+```json
+{
+  "deploymentType": "backend",
+  "projectName": "my-api",
+  "projectRoot": "/path/to/project",
+  "region": "us-east-1",
+  "backendConfiguration": {
+    "builtArtifactsPath": "/path/to/built/artifacts",
+    "runtime": "nodejs18.x",
+    "startupScript": "bootstrap",
+    "memorySize": 512,
+    "timeout": 30,
+    "environment": {
+      "NODE_ENV": "production"
+    },
+    "databaseConfiguration": {
+      "tableName": "Users",
+      "attributeDefinitions": [
+        { "name": "id", "type": "S" }
+      ],
+      "keySchema": [
+        { "name": "id", "type": "HASH" }
+      ]
+    }
+  }
+}
+```
+
+### Frontend Deployment
+
+```json
+{
+  "deploymentType": "frontend",
+  "projectName": "my-website",
+  "projectRoot": "/path/to/project",
+  "region": "us-east-1",
+  "frontendConfiguration": {
+    "builtAssetsPath": "/path/to/built/assets",
+    "indexDocument": "index.html",
+    "customDomain": "example.com",
+    "certificateArn": "arn:aws:acm:us-east-1:123456789012:certificate/abcdef12-3456-7890-abcd-ef1234567890"
+  }
+}
+```
+
+### Fullstack Deployment
+
+```json
+{
+  "deploymentType": "fullstack",
+  "projectName": "my-fullstack-app",
+  "projectRoot": "/path/to/project",
+  "region": "us-east-1",
+  "backendConfiguration": {
+    "builtArtifactsPath": "/path/to/backend/artifacts",
+    "runtime": "nodejs18.x",
+    "environment": {
+      "NODE_ENV": "production"
+    }
+  },
+  "frontendConfiguration": {
+    "builtAssetsPath": "/path/to/frontend/assets",
+    "indexDocument": "index.html"
+  }
+}
+```
+
 ## Development
 
 ### Project Structure
@@ -232,7 +316,7 @@ This will return a list of all available resources, their descriptions, patterns
 │   │   │   └── index.ts  # Resource registration
 │   │   └── server.ts     # MCP server setup
 │   ├── deployment/       # Deployment service
-│   ├── aws/              # AWS integration
+│   ├── cli/              # Command line interface
 │   └── index.ts          # Main server entry point
 ├── templates/            # Deployment templates
 ├── examples/             # Example applications
@@ -271,13 +355,13 @@ If you encounter a "Template not found" error when using the MCP server installe
 
 ### Resource Not Found
 
-If you encounter a "Resource not found" error, the server will suggest alternative resources that might be what you're looking for. You can also use the `mcp:resources` resource to discover all available resources:
+If you encounter a "Resource not found" error, the server will suggest alternative resources that might be what you're looking for. You can also use the `resource/list` method to discover all available resources:
 
 ```bash
-curl -X POST http://localhost:3000/mcp -H "Content-Type: application/json" -d '{"jsonrpc":"2.0","id":1,"method":"resource/get","params":{"uri":"mcp:resources"}}'
+curl -X POST http://localhost:3000/messages -H "Content-Type: application/json" -d '{"jsonrpc":"2.0","id":1,"method":"resource/list","params":{}}'
 ```
 
-Or when using as a local MCP server with Claude or other LLM clients, simply request the `mcp:resources` resource.
+Or when using as a local MCP server with Claude or other LLM clients, simply request a list of resources.
 
 ## License
 

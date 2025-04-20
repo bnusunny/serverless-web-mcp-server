@@ -19,8 +19,8 @@ Resources:
   ApiFunction:
     Type: AWS::Serverless::Function
     Properties:
-      CodeUri: ./src/
-      Handler: bootstrap
+      CodeUri: {{backendConfiguration.builtArtifactsPath}}
+      Handler: {{backendConfiguration.startupScript}}
       Runtime: {{backendConfiguration.runtime}}
       MemorySize: {{backendConfiguration.memorySize}}
       Timeout: {{backendConfiguration.timeout}}
@@ -30,39 +30,17 @@ Resources:
         Variables:
           PORT: 8080
           AWS_LAMBDA_EXEC_WRAPPER: /opt/bootstrap
-          {{#ifEquals backendConfiguration.framework "express"}}
-          # Express.js specific environment variables
-          NODE_OPTIONS: --enable-source-maps
-          {{#ifExists backendConfiguration.entryPoint}}
-          APP_ENTRY: {{backendConfiguration.entryPoint}}
-          {{/ifExists}}
-          {{/ifEquals}}
-          {{#ifEquals backendConfiguration.framework "nodejs"}}
-          # Node.js specific environment variables
-          NODE_OPTIONS: --enable-source-maps
-          {{#ifExists backendConfiguration.entryPoint}}
-          APP_ENTRY: {{backendConfiguration.entryPoint}}
-          {{/ifExists}}
-          {{/ifEquals}}
-          {{#ifEquals backendConfiguration.framework "flask"}}
-          # Flask specific environment variables
-          {{#ifExists backendConfiguration.entryPoint}}
-          FLASK_APP: {{backendConfiguration.entryPoint}}
-          {{else}}
-          FLASK_APP: app.py
-          {{/ifExists}}
-          {{/ifEquals}}
-          {{#ifEquals backendConfiguration.framework "fastapi"}}
-          # FastAPI specific environment variables
-          {{#ifExists backendConfiguration.entryPoint}}
-          APP_MODULE: {{backendConfiguration.entryPoint}}
-          {{else}}
-          APP_MODULE: main:app
-          {{/ifExists}}
-          {{/ifEquals}}
           {{#eachInObject backendConfiguration.environment}}
           {{key}}: {{value}}
           {{/eachInObject}}
+          {{#ifExists backendConfiguration.databaseConfiguration}}
+          TABLE_NAME: {{backendConfiguration.databaseConfiguration.tableName}}
+          {{/ifExists}}
+      {{#ifExists backendConfiguration.databaseConfiguration}}
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref {{backendConfiguration.databaseConfiguration.tableName}}Table
+      {{/ifExists}}
       Layers:
         {{#ifEquals backendConfiguration.architecture "arm64"}}
         - !Sub "arn:aws:lambda:${AWS::Region}:753240598075:layer:LambdaAdapterLayerArm64:24"
@@ -83,27 +61,27 @@ Resources:
             Path: /
             Method: ANY
 
-  {{#ifExists databaseConfiguration}}
+  {{#ifExists backendConfiguration.databaseConfiguration}}
   # DynamoDB Table
-  {{databaseConfiguration.tableName}}Table:
+  {{backendConfiguration.databaseConfiguration.tableName}}Table:
     Type: AWS::DynamoDB::Table
     Properties:
-      TableName: {{databaseConfiguration.tableName}}
-      BillingMode: {{#ifEquals databaseConfiguration.billingMode "PROVISIONED"}}PROVISIONED{{else}}PAY_PER_REQUEST{{/ifEquals}}
+      TableName: {{backendConfiguration.databaseConfiguration.tableName}}
+      BillingMode: {{#ifEquals backendConfiguration.databaseConfiguration.billingMode "PROVISIONED"}}PROVISIONED{{else}}PAY_PER_REQUEST{{/ifEquals}}
       AttributeDefinitions:
-        {{#each databaseConfiguration.attributeDefinitions}}
+        {{#each backendConfiguration.databaseConfiguration.attributeDefinitions}}
         - AttributeName: {{name}}
           AttributeType: {{type}}
         {{/each}}
       KeySchema:
-        {{#each databaseConfiguration.keySchema}}
+        {{#each backendConfiguration.databaseConfiguration.keySchema}}
         - AttributeName: {{name}}
           KeyType: {{type}}
         {{/each}}
-      {{#ifEquals databaseConfiguration.billingMode "PROVISIONED"}}
+      {{#ifEquals backendConfiguration.databaseConfiguration.billingMode "PROVISIONED"}}
       ProvisionedThroughput:
-        ReadCapacityUnits: {{databaseConfiguration.readCapacity}}
-        WriteCapacityUnits: {{databaseConfiguration.writeCapacity}}
+        ReadCapacityUnits: {{backendConfiguration.databaseConfiguration.readCapacity}}
+        WriteCapacityUnits: {{backendConfiguration.databaseConfiguration.writeCapacity}}
       {{/ifEquals}}
   {{/ifExists}}
 
@@ -120,8 +98,8 @@ Outputs:
     Description: Lambda function name
     Value: !Ref ApiFunction
   
-  {{#ifExists databaseConfiguration}}
+  {{#ifExists backendConfiguration.databaseConfiguration}}
   TableName:
     Description: Name of the DynamoDB table
-    Value: !Ref {{databaseConfiguration.tableName}}Table
+    Value: !Ref {{backendConfiguration.databaseConfiguration.tableName}}Table
   {{/ifExists}}
