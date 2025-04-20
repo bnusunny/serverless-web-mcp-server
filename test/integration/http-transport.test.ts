@@ -1,12 +1,7 @@
 // test/integration/http-transport.test.ts
-import request from 'supertest';
-import express from 'express';
-import bodyParser from 'body-parser';
-import cors from 'cors';
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp';
-import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse';
-import { toolDefinitions } from '../../src/mcp/tools/index';
-import resources from '../../src/mcp/resources/index';
+const request = require('supertest');
+const express = require('express');
+const cors = require('cors');
 
 // Mock MCP SDK
 jest.mock('@modelcontextprotocol/sdk/server/mcp', () => {
@@ -61,25 +56,53 @@ jest.mock('@modelcontextprotocol/sdk/server/sse', () => {
             'Connection': 'keep-alive'
           });
           res.write('data: {"message":"Connected to SSE"}\n\n');
-          req.on('close', () => {
-            res.end();
-          });
+          // Close the connection immediately for testing
+          res.end();
         })
       };
     })
   };
 });
 
+// Mock these imports
+jest.mock('../../src/mcp/tools/index', () => ({
+  toolDefinitions: {
+    'deploy': {
+      schema: {},
+      handler: jest.fn()
+    },
+    'configure-domain': {
+      schema: {},
+      handler: jest.fn()
+    }
+  }
+}), { virtual: true });
+
+jest.mock('../../src/mcp/resources/index', () => ([
+  { pattern: 'template:list', handler: jest.fn() },
+  { pattern: 'deployment:list', handler: jest.fn() }
+]), { virtual: true });
+
 describe('MCP Server HTTP Transport', () => {
-  let app: express.Application;
-  let server: McpServer;
+  let app;
+  let server;
+  let McpServer;
+  let SSEServerTransport;
 
   beforeAll(() => {
+    // Import after mocking
+    McpServer = require('@modelcontextprotocol/sdk/server/mcp').McpServer;
+    SSEServerTransport = require('@modelcontextprotocol/sdk/server/sse').SSEServerTransport;
+    
     app = express();
     app.use(cors());
-    app.use(bodyParser.json());
+    app.use(express.json());
     
     server = new McpServer();
+    
+    // Import after mocking
+    const { toolDefinitions } = require('../../src/mcp/tools/index');
+    const resources = require('../../src/mcp/resources/index');
     
     // Register tools
     Object.entries(toolDefinitions).forEach(([name, definition]) => {

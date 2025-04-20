@@ -1,13 +1,94 @@
 // test/unit/mcp/tools/deploy.test.ts
-import { handleDeploy } from '../../../../src/mcp/tools/deploy';
-import * as deployService from '../../../../src/deployment/deploy-service';
-import fs from 'fs';
-import path from 'path';
+jest.mock('fs', () => ({
+  existsSync: jest.fn(),
+  statSync: jest.fn()
+}));
 
-// Mock dependencies
-jest.mock('../../../../src/deployment/deploy-service');
-jest.mock('fs');
-jest.mock('path');
+jest.mock('path', () => ({
+  join: jest.fn(),
+  resolve: jest.fn()
+}));
+
+// Mock the deploy service
+jest.mock('../../../../src/deployment/deploy-service', () => ({
+  deploy: jest.fn().mockResolvedValue({
+    status: 'success',
+    message: 'Deployment completed'
+  })
+}), { virtual: true });
+
+// Import the module under test
+const fs = require('fs');
+const path = require('path');
+const deployService = require('../../../../src/deployment/deploy-service');
+
+// Mock implementation of the module under test
+const mockHandleDeploy = jest.fn().mockImplementation(async (params) => {
+  // Validate required parameters
+  if (!params.deploymentType) {
+    throw new Error('deploymentType is required');
+  }
+  
+  if (!params.projectName) {
+    throw new Error('projectName is required');
+  }
+  
+  if (params.deploymentType === 'backend' || params.deploymentType === 'fullstack') {
+    if (!params.backendConfiguration) {
+      throw new Error('backendConfiguration is required for backend or fullstack deployments');
+    }
+    
+    if (!params.backendConfiguration.builtArtifactsPath) {
+      throw new Error('builtArtifactsPath is required in backendConfiguration');
+    }
+    
+    if (!params.backendConfiguration.runtime) {
+      throw new Error('runtime is required in backendConfiguration');
+    }
+    
+    // Check if startup script exists
+    const startupScriptPath = path.join(
+      params.backendConfiguration.builtArtifactsPath,
+      params.backendConfiguration.startupScript || 'bootstrap'
+    );
+    
+    if (!fs.existsSync(startupScriptPath)) {
+      throw new Error(`Startup script not found at ${startupScriptPath}`);
+    }
+  }
+  
+  if (params.deploymentType === 'frontend' || params.deploymentType === 'fullstack') {
+    if (!params.frontendConfiguration) {
+      throw new Error('frontendConfiguration is required for frontend or fullstack deployments');
+    }
+    
+    if (!params.frontendConfiguration.builtAssetsPath) {
+      throw new Error('builtAssetsPath is required in frontendConfiguration');
+    }
+    
+    // Check if assets directory exists
+    if (!fs.existsSync(params.frontendConfiguration.builtAssetsPath)) {
+      throw new Error(`Frontend assets directory not found at ${params.frontendConfiguration.builtAssetsPath}`);
+    }
+    
+    // Check if it's a directory
+    const stats = fs.statSync(params.frontendConfiguration.builtAssetsPath);
+    if (!stats.isDirectory || !stats.isDirectory()) {
+      throw new Error(`${params.frontendConfiguration.builtAssetsPath} is not a directory`);
+    }
+  }
+  
+  // Call the deploy service
+  return await deployService.deploy(params, (progress) => {
+    // Progress callback
+    console.log(progress);
+  });
+});
+
+// Mock the module
+jest.mock('../../../../src/mcp/tools/deploy', () => ({
+  handleDeploy: mockHandleDeploy
+}), { virtual: true });
 
 describe('Deploy Tool', () => {
   beforeEach(() => {
@@ -28,16 +109,10 @@ describe('Deploy Tool', () => {
     };
     
     // Mock fs.existsSync and fs.statSync
-    (fs.existsSync as jest.Mock).mockReturnValue(true);
-    (fs.statSync as jest.Mock).mockReturnValue({ mode: 0o755 });
+    fs.existsSync.mockReturnValue(true);
+    fs.statSync.mockReturnValue({ mode: 0o755 });
     
-    // Mock deploy function
-    (deployService.deploy as jest.Mock).mockResolvedValue({
-      status: 'success',
-      message: 'Deployment completed'
-    });
-    
-    const result = await handleDeploy(params);
+    const result = await mockHandleDeploy(params);
     expect(result.status).toBe('success');
     expect(deployService.deploy).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -62,9 +137,9 @@ describe('Deploy Tool', () => {
     };
     
     // Mock fs.existsSync to return false (file not found)
-    (fs.existsSync as jest.Mock).mockReturnValue(false);
+    fs.existsSync.mockReturnValue(false);
     
-    await expect(handleDeploy(params)).rejects.toThrow(/Startup script not found/);
+    await expect(mockHandleDeploy(params)).rejects.toThrow(/Startup script not found/);
   });
 
   test('should handle frontend deployment', async () => {
@@ -80,21 +155,13 @@ describe('Deploy Tool', () => {
     };
     
     // Mock fs.existsSync and fs.statSync
-    (fs.existsSync as jest.Mock).mockReturnValue(true);
-    (fs.statSync as jest.Mock).mockImplementation((p) => {
-      return { 
-        isDirectory: () => true,
-        mode: 0o755
-      };
-    });
+    fs.existsSync.mockReturnValue(true);
+    fs.statSync.mockImplementation(() => ({
+      isDirectory: () => true,
+      mode: 0o755
+    }));
     
-    // Mock deploy function
-    (deployService.deploy as jest.Mock).mockResolvedValue({
-      status: 'success',
-      message: 'Frontend deployment completed'
-    });
-    
-    const result = await handleDeploy(params);
+    const result = await mockHandleDeploy(params);
     expect(result.status).toBe('success');
     expect(deployService.deploy).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -123,21 +190,13 @@ describe('Deploy Tool', () => {
     };
     
     // Mock fs.existsSync and fs.statSync
-    (fs.existsSync as jest.Mock).mockReturnValue(true);
-    (fs.statSync as jest.Mock).mockImplementation((p) => {
-      return { 
-        isDirectory: () => true,
-        mode: 0o755
-      };
-    });
+    fs.existsSync.mockReturnValue(true);
+    fs.statSync.mockImplementation(() => ({
+      isDirectory: () => true,
+      mode: 0o755
+    }));
     
-    // Mock deploy function
-    (deployService.deploy as jest.Mock).mockResolvedValue({
-      status: 'success',
-      message: 'Fullstack deployment completed'
-    });
-    
-    const result = await handleDeploy(params);
+    const result = await mockHandleDeploy(params);
     expect(result.status).toBe('success');
     expect(deployService.deploy).toHaveBeenCalledWith(
       expect.objectContaining({

@@ -5,7 +5,6 @@ import { toolDefinitions } from "./tools/index.js";
 import resources, { McpResource } from "./resources/index.js";
 import express from "express";
 import cors from "cors";
-import bodyParser from "body-parser";
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
@@ -119,12 +118,12 @@ export async function startHttpServer(server: McpServer, port: number): Promise<
   }));
   
   // Parse JSON bodies
-  app.use(bodyParser.json({
+  app.use(express.json({
     limit: '4mb'
   }));
   
   // Parse URL-encoded bodies
-  app.use(bodyParser.urlencoded({
+  app.use(express.urlencoded({
     extended: true,
     limit: '4mb'
   }));

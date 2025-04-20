@@ -1,8 +1,8 @@
-// test/helpers/setup.ts
-import { config } from 'dotenv';
+// test/helpers/setup.js
+import dotenv from 'dotenv';
 
 // Load test environment variables
-config({ path: '.env.test' });
+dotenv.config({ path: '.env.test' });
 
 // Global test timeout
 jest.setTimeout(30000);
@@ -13,6 +13,7 @@ if (!process.env.DEBUG) {
     ...console,
     log: jest.fn(),
     info: jest.fn(),
-    debug: jest.fn()
+    debug: jest.fn(),
+    error: console.error // Keep error logging
   };
 }
