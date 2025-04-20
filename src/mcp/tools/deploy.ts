@@ -1,198 +1,183 @@
 /**
- * Deploy tool implementation
+ * Deploy Tool
  * 
- * This tool deploys web applications to AWS serverless infrastructure.
+ * Handles deployment of web applications to AWS serverless infrastructure.
  */
 
-import * as path from 'path';
-import * as fs from 'fs';
-import { deploy, getDeploymentResult } from '../../deployment/deploy-service.js';
-import { uploadFrontendAssets } from '../../deployment/frontend-upload.js';
-import { DeployToolParams, DeployToolResult } from '../../types/index.js';
 import { logger } from '../../utils/logger.js';
+import { deploy } from '../../deployment/deploy-service.js';
+import { DeploymentStatus } from '../../deployment/types.js';
 
 /**
- * Deploy tool handler
- * 
- * @param params - Deploy tool parameters
- * @returns - Deploy tool result
+ * Handle deploy tool invocation
+ * @param {Object} params - Parameters for the deployment
+ * @returns {Promise<Object>} Deployment result
  */
-export async function handleDeploy(params: DeployToolParams): Promise<DeployToolResult> {
-  logger.info(`[DEPLOY TOOL] Starting deployment with params: ${JSON.stringify(params)}`);
+export async function handleDeploy(params) {
+  logger.info(`Starting deployment for project: ${params.projectName}`);
+  logger.info(`Deployment type: ${params.deploymentType}`);
   
   try {
-    // Validate required parameters
-    validateParams(params);
+    // Log deployment parameters for debugging
+    logger.debug('Deployment parameters:', JSON.stringify(params, null, 2));
     
-    // Deploy the application
-    const deployResult = await deploy({
-      deploymentType: params.deploymentType,
-      projectName: params.projectName,
-      projectRoot: params.projectRoot,
-      region: params.region,
-      backendConfiguration: params.backendConfiguration,
-      frontendConfiguration: params.frontendConfiguration
-    });
+    // Start deployment
+    const result = await deploy(params);
     
-    // If frontend deployment, upload assets
-    if ((params.deploymentType === 'frontend' || params.deploymentType === 'fullstack') && 
-        params.frontendConfiguration && deployResult.status === 'success') {
-      await uploadFrontendAssets({
-        projectName: params.projectName,
-        region: params.region,
-        frontendConfiguration: params.frontendConfiguration
-      }, deployResult);
+    // Format the response based on deployment status
+    switch (result.status) {
+      case DeploymentStatus.DEPLOYED:
+        logger.info(`Deployment successful for project: ${params.projectName}`);
+        return formatSuccessResponse(result, params.deploymentType);
+        
+      case DeploymentStatus.PARTIAL:
+        logger.warn(`Partial deployment for project: ${params.projectName}`);
+        return formatPartialResponse(result, params.deploymentType);
+        
+      case DeploymentStatus.FAILED:
+        logger.error(`Deployment failed for project: ${params.projectName}`);
+        return formatErrorResponse(result, params.deploymentType);
+        
+      default:
+        logger.warn(`Unknown deployment status: ${result.status}`);
+        return {
+          success: false,
+          message: `Unknown deployment status: ${result.status}`,
+          result
+        };
     }
-    
-    // Get final deployment result
-    const finalResult = await getDeploymentResult(params.projectName);
-    
-    // Create response
-    const response: DeployToolResult = {
-      content: [
-        {
-          type: "text",
-          text: `Deployment ${finalResult.status === 'success' ? 'completed successfully' : 'failed'}`
-        }
-      ],
-      status: finalResult.status === 'success' ? 'success' : 'error',
-      message: finalResult.message,
-      stackName: finalResult.stackName
-    };
-    
-    // Add URLs if available
-    if (finalResult.apiUrl) {
-      response.apiUrl = finalResult.apiUrl;
-      response.content.push({
-        type: "text",
-        text: `API URL: ${finalResult.apiUrl}`
-      });
-    }
-    
-    if (finalResult.websiteUrl) {
-      response.websiteUrl = finalResult.websiteUrl;
-      response.content.push({
-        type: "text",
-        text: `Website URL: ${finalResult.websiteUrl}`
-      });
-    }
-    
-    return response;
-  } catch (error: any) {
-    logger.error(`[DEPLOY TOOL ERROR] ${error.message}`);
-    
+  } catch (error) {
+    logger.error(`Error in deploy tool: ${error.message}`);
     return {
-      content: [
-        {
-          type: "text",
-          text: `Deployment failed: ${error.message}`
-        }
-      ],
-      status: 'error',
-      message: `Deployment failed: ${error.message}`
+      success: false,
+      message: `Deployment failed: ${error.message}`,
+      error: error.message,
+      stackTrace: error.stack
     };
   }
 }
 
 /**
- * Validate deploy tool parameters
- * 
- * @param params - Deploy tool parameters
+ * Format a successful deployment response
+ * @param {Object} result - Deployment result
+ * @param {string} deploymentType - Type of deployment
+ * @returns {Object} Formatted response
  */
-function validateParams(params: DeployToolParams): void {
-  // Check required parameters
-  if (!params.deploymentType) {
-    throw new Error('deploymentType is required');
-  }
+function formatSuccessResponse(result, deploymentType) {
+  const response = {
+    success: true,
+    message: result.message,
+    deploymentType,
+    status: result.status
+  };
   
-  if (!params.projectName) {
-    throw new Error('projectName is required');
-  }
-  
-  if (!params.projectRoot) {
-    throw new Error('projectRoot is required');
-  }
-  
-  // Check if project root exists
-  if (!fs.existsSync(params.projectRoot)) {
-    throw new Error(`Project root directory not found: ${params.projectRoot}`);
-  }
-  
-  // Check deployment type specific parameters
-  if (params.deploymentType === 'backend' || params.deploymentType === 'fullstack') {
-    if (!params.backendConfiguration) {
-      throw new Error('backendConfiguration is required for backend or fullstack deployments');
-    }
-    
-    if (!params.backendConfiguration.builtArtifactsPath) {
-      throw new Error('backendConfiguration.builtArtifactsPath is required');
-    }
-    
-    if (!params.backendConfiguration.runtime) {
-      throw new Error('backendConfiguration.runtime is required');
-    }
-    
-    if (!params.backendConfiguration.startupScript) {
-      throw new Error('backendConfiguration.startupScript is required. It must be a single executable script that takes no parameters.');
-    }
-    
-    // Check if startup script exists
-    const startupScriptPath = path.join(params.backendConfiguration.builtArtifactsPath, params.backendConfiguration.startupScript);
-    if (!fs.existsSync(startupScriptPath)) {
-      throw new Error(`Startup script not found: ${startupScriptPath}`);
-    }
-    
-    // Check if startup script will be executable in Lambda (Linux) environment
-    try {
-      const stats = fs.statSync(startupScriptPath);
-      const isExecutable = !!(stats.mode & 0o111); // Check if any execute bit is set
+  switch (deploymentType) {
+    case 'backend':
+      return {
+        ...response,
+        apiUrl: result.url,
+        endpoints: {
+          api: result.url
+        },
+        outputs: result.outputs || {}
+      };
       
-      if (!isExecutable) {
-        // Script doesn't have execute permissions
-        const isWindows = process.platform === 'win32';
-        
-        if (isWindows) {
-          // On Windows, warn that the script needs to be made executable for Lambda
-          logger.warn(`Warning: The startup script '${params.backendConfiguration.startupScript}' doesn't have execute permissions.`);
-          logger.warn(`Since AWS Lambda runs on Linux, you should ensure the script has execute permissions.`);
-          logger.warn(`If deploying from Windows, you may need to add a chmod +x command in your build process.`);
-          
-          // Check if it's a shell script without extension or with .sh extension
-          if (!path.extname(startupScriptPath) || startupScriptPath.endsWith('.sh')) {
-            logger.warn(`For shell scripts, consider adding "#!/bin/sh" or "#!/bin/bash" as the first line.`);
-          }
-        } else {
-          // On Unix systems, we can be more direct about fixing permissions
-          throw new Error(`Startup script is not executable: ${startupScriptPath}. AWS Lambda requires executable permissions. Please run 'chmod +x ${startupScriptPath}'`);
-        }
-      }
+    case 'frontend':
+      return {
+        ...response,
+        websiteUrl: result.url,
+        endpoints: {
+          website: result.url
+        },
+        bucketName: result.bucketName,
+        distributionUrl: result.distributionUrl
+      };
       
-      // If it's a shell script, check for shebang
-      if (!path.extname(startupScriptPath) || startupScriptPath.endsWith('.sh')) {
-        try {
-          const fileContent = fs.readFileSync(startupScriptPath, 'utf8');
-          const firstLine = fileContent.split('\n')[0];
-          
-          if (!firstLine.startsWith('#!')) {
-            logger.warn(`Warning: The startup script '${params.backendConfiguration.startupScript}' doesn't have a shebang line.`);
-            logger.warn(`For shell scripts in Lambda, add "#!/bin/sh" or "#!/bin/bash" as the first line.`);
-          }
-        } catch (readError) {
-          logger.warn(`Could not read startup script to check for shebang: ${readError}`);
+    case 'fullstack':
+      return {
+        ...response,
+        endpoints: {
+          api: result.backendUrl,
+          website: result.frontendUrl
+        },
+        backend: {
+          apiUrl: result.backendUrl,
+          outputs: result.backendResult?.outputs || {}
+        },
+        frontend: {
+          websiteUrl: result.frontendUrl,
+          bucketName: result.frontendResult?.bucketName,
+          distributionUrl: result.frontendResult?.distributionUrl
         }
+      };
+      
+    default:
+      return response;
+  }
+}
+
+/**
+ * Format a partial deployment response
+ * @param {Object} result - Deployment result
+ * @param {string} deploymentType - Type of deployment
+ * @returns {Object} Formatted response
+ */
+function formatPartialResponse(result, deploymentType) {
+  const response = {
+    success: false,
+    partialSuccess: true,
+    message: result.message,
+    deploymentType,
+    status: result.status,
+    error: result.error
+  };
+  
+  // Only applicable for fullstack deployments
+  if (deploymentType === 'fullstack') {
+    return {
+      ...response,
+      backend: {
+        success: result.backendResult?.status === DeploymentStatus.DEPLOYED,
+        apiUrl: result.backendResult?.url,
+        outputs: result.backendResult?.outputs || {}
+      },
+      frontend: {
+        success: result.frontendResult?.status === DeploymentStatus.DEPLOYED,
+        websiteUrl: result.frontendResult?.url,
+        bucketName: result.frontendResult?.bucketName,
+        distributionUrl: result.frontendResult?.distributionUrl
       }
-    } catch (error: any) {
-      throw new Error(`Failed to check if startup script is executable: ${error.message}`);
-    }
+    };
   }
   
-  if (params.deploymentType === 'frontend' || params.deploymentType === 'fullstack') {
-    if (!params.frontendConfiguration) {
-      throw new Error('frontendConfiguration is required for frontend or fullstack deployments');
-    }
-    
-    if (!params.frontendConfiguration.builtAssetsPath) {
-      throw new Error('frontendConfiguration.builtAssetsPath is required');
-    }
+  return response;
+}
+
+/**
+ * Format an error deployment response
+ * @param {Object} result - Deployment result
+ * @param {string} deploymentType - Type of deployment
+ * @returns {Object} Formatted response
+ */
+function formatErrorResponse(result, deploymentType) {
+  const response = {
+    success: false,
+    message: result.message,
+    deploymentType,
+    status: result.status,
+    error: result.error
+  };
+  
+  // Add validation results if available
+  if (result.validationResult) {
+    response.validationErrors = result.validationResult.errors;
+    response.validationWarnings = result.validationResult.warnings;
   }
+  
+  // Add phase information if available
+  if (result.phase) {
+    response.failedPhase = result.phase;
+  }
+  
+  return response;
 }

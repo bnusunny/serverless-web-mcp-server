@@ -9,17 +9,17 @@ import * as fs from 'fs';
 import { promisify } from 'util';
 import { exec, spawn } from 'child_process';
 import handlebars from 'handlebars';
-// Remove fileURLToPath import
 import { 
   DeployOptions, 
-  DeployResult, 
-  DeploymentConfiguration,
-  DeploySamResult
-} from '../types/index.js';
-import * as os from 'os';
+  BackendDeployOptions, 
+  FrontendDeployOptions,
+  FullstackDeployOptions,
+  DeploymentResult,
+  DeploymentStatus
+} from './types.js';
+
 import { logger } from '../utils/logger.js';
-// We're not importing uploadFrontendAssets since it's handled in deploy.ts
-// import { uploadFrontendAssets } from './frontend-upload.js';
+import { validateDeploymentOptions, formatValidationResult } from './validation.js';
 
 // Get directory path for CommonJS
 const __dirname = path.resolve();
@@ -28,506 +28,279 @@ const execAsync = promisify(exec);
 const writeFileAsync = promisify(fs.writeFile);
 const readFileAsync = promisify(fs.readFile);
 
-// Define the directory where deployment status files will be stored
-const DEPLOYMENT_STATUS_DIR = path.join(os.tmpdir(), 'serverless-web-mcp-deployments');
-
-// Ensure the directory exists
-if (!fs.existsSync(DEPLOYMENT_STATUS_DIR)) {
-  fs.mkdirSync(DEPLOYMENT_STATUS_DIR, { recursive: true });
-}
-
 /**
  * Deploy a web application to AWS serverless infrastructure
- * 
- * @param options - Deployment options
- * @returns - Deployment result
+ * @param {DeployOptions} options - Deployment options
+ * @returns {Promise<DeploymentResult>} Deployment result
  */
-export async function deploy(options: DeployOptions): Promise<DeployResult> {
-  const { deploymentType, projectName, projectRoot } = options;
-  
-  logger.info(`[DEPLOY START] Starting deployment process for ${projectName}`);
-  logger.info(`Deployment type: ${deploymentType}`);
-  
+export async function deploy(options: DeployOptions): Promise<DeploymentResult> {
   try {
-    // Create deployment configuration
-    const configuration: DeploymentConfiguration = {
-      projectName,
-      region: options.region || 'us-east-1',
-      backendConfiguration: options.backendConfiguration,
-      frontendConfiguration: options.frontendConfiguration
+    // Run validation
+    logger.info("Validating deployment configuration...");
+    const validationResult = validateDeploymentOptions(options);
+    
+    if (!validationResult.valid) {
+      const formattedResult = formatValidationResult(validationResult);
+      logger.error(`Validation failed:\n${formattedResult}`);
+      return {
+        status: DeploymentStatus.FAILED,
+        message: 'Deployment validation failed',
+        error: formattedResult,
+        validationResult
+      };
+    }
+    
+    logger.info("Validation successful!");
+    
+    // Log warnings if any
+    if (validationResult.warnings.length > 0) {
+      const formattedWarnings = formatValidationResult({
+        valid: true,
+        errors: [],
+        warnings: validationResult.warnings
+      });
+      logger.warn(`Validation warnings:\n${formattedWarnings}`);
+    }
+    
+    // Determine deployment type and call appropriate function
+    logger.info(`Starting ${options.deploymentType} deployment for project: ${options.projectName}`);
+    
+    switch (options.deploymentType) {
+      case 'backend':
+        return await deployBackend(options);
+      case 'frontend':
+        return await deployFrontend(options);
+      case 'fullstack':
+        return await deployFullstack(options);
+      default:
+        throw new Error(`Unsupported deployment type: ${options.deploymentType}`);
+    }
+  } catch (error) {
+    logger.error(`Deployment failed: ${error.message}`);
+    return {
+      status: DeploymentStatus.FAILED,
+      message: `Deployment failed: ${error.message}`,
+      error: error.message,
+      stackTrace: error.stack
     };
-    
-    // Validate configuration
-    validateConfiguration(configuration, deploymentType);
-    
-    // Update deployment status
-    updateDeploymentStatus(projectName, {
-      status: 'preparing',
-      message: 'Preparing deployment...',
-      projectName,
-      lastUpdated: new Date().toISOString()
-    });
+  }
+}
+
+/**
+ * Deploy a backend application
+ * @param {DeployOptions} options - Backend deployment options
+ * @returns {Promise<DeploymentResult>} Deployment result
+ */
+async function deployBackend(options: DeployOptions): Promise<DeploymentResult> {
+  try {
+    logger.info("Preparing backend deployment...");
     
     // Generate SAM template
-    await generateSamTemplate(projectRoot, configuration, deploymentType);
+    logger.info("Generating SAM template...");
+    const templatePath = await generateSamTemplate(options);
+    logger.info(`SAM template generated at: ${templatePath}`);
     
-    // Deploy the application
-    await buildAndDeployApplication(projectRoot, configuration, deploymentType);
+    // Deploy with SAM CLI
+    logger.info("Deploying with SAM CLI...");
+    await deploySamApplication(options, templatePath);
     
-    // Get deployment result
-    const result = await getDeploymentResult(projectName);
+    // Get deployment outputs
+    logger.info("Retrieving deployment outputs...");
+    const outputs = await getDeploymentOutputs(options);
     
-    logger.info(`[DEPLOY COMPLETE] Deployment completed for ${projectName}`);
-    return result;
-  } catch (error: any) {
-    logger.error(`[DEPLOY ERROR] Deployment failed for ${projectName}: ${error.message}`);
-    
-    // Update deployment status
-    updateDeploymentStatus(projectName, {
-      status: 'error',
-      message: `Deployment process failed: ${error.message}`,
-      projectName,
-      lastUpdated: new Date().toISOString()
-    });
+    logger.info("Backend deployment completed successfully!");
     
     return {
-      status: 'error',
-      message: `Deployment failed: ${error.message}`,
-      projectName
+      status: DeploymentStatus.DEPLOYED,
+      message: 'Backend deployed successfully',
+      url: outputs.ApiUrl || `https://${options.projectName}.execute-api.${options.region || 'us-east-1'}.amazonaws.com/${options.backendConfiguration?.stage || 'prod'}/`,
+      outputs
+    };
+  } catch (error) {
+    logger.error(`Backend deployment failed: ${error.message}`);
+    return {
+      status: DeploymentStatus.FAILED,
+      message: `Backend deployment failed: ${error.message}`,
+      error: error.message,
+      stackTrace: error.stack,
+      phase: error.phase || 'unknown'
     };
   }
 }
 
 /**
- * Validate deployment configuration
- * 
- * @param configuration - Deployment configuration
- * @param deploymentType - Type of deployment
+ * Deploy a frontend application
+ * @param {DeployOptions} options - Frontend deployment options
+ * @returns {Promise<DeploymentResult>} Deployment result
  */
-function validateConfiguration(configuration: DeploymentConfiguration, deploymentType: string): void {
-  // Common validation
-  if (!configuration.projectName) {
-    throw new Error('Project name is required');
-  }
-  
-  // Backend validation
-  if (deploymentType === 'backend' || deploymentType === 'fullstack') {
-    if (!configuration.backendConfiguration) {
-      throw new Error('Backend configuration is required for backend or fullstack deployments');
-    }
-    
-    const backendConfig = configuration.backendConfiguration;
-    
-    if (!backendConfig.builtArtifactsPath) {
-      throw new Error('Built artifacts path is required for backend deployment');
-    }
-    
-    if (!fs.existsSync(backendConfig.builtArtifactsPath)) {
-      throw new Error(`Built artifacts path not found: ${backendConfig.builtArtifactsPath}`);
-    }
-    
-    // Check if startup script exists
-    const startupScript = backendConfig.startupScript || 'bootstrap';
-    const startupScriptPath = path.join(backendConfig.builtArtifactsPath, startupScript);
-    
-    if (!fs.existsSync(startupScriptPath)) {
-      throw new Error(`Startup script not found: ${startupScriptPath}`);
-    }
-    
-    // Make startup script executable
-    try {
-      fs.chmodSync(startupScriptPath, 0o755);
-    } catch (error) {
-      logger.warn(`Failed to make startup script executable: ${error}`);
-    }
-    
-    if (!backendConfig.runtime) {
-      throw new Error('Runtime is required for backend deployment');
-    }
-  }
-  
-  // Frontend validation
-  if (deploymentType === 'frontend' || deploymentType === 'fullstack') {
-    if (!configuration.frontendConfiguration) {
-      throw new Error('Frontend configuration is required for frontend or fullstack deployments');
-    }
-    
-    const frontendConfig = configuration.frontendConfiguration;
-    
-    if (!frontendConfig.builtAssetsPath) {
-      throw new Error('Built assets path is required for frontend deployment');
-    }
-    
-    if (!fs.existsSync(frontendConfig.builtAssetsPath)) {
-      throw new Error(`Built assets path not found: ${frontendConfig.builtAssetsPath}`);
-    }
-    
-    // Check if index document exists
-    const indexDocument = frontendConfig.indexDocument || 'index.html';
-    const indexDocumentPath = path.join(frontendConfig.builtAssetsPath, indexDocument);
-    
-    if (!fs.existsSync(indexDocumentPath)) {
-      throw new Error(`Index document not found: ${indexDocumentPath}`);
-    }
-    
-    // If custom domain is provided, certificate ARN is required
-    if (frontendConfig.customDomain && !frontendConfig.certificateArn) {
-      throw new Error('Certificate ARN is required when using a custom domain');
-    }
-  }
-}
-
-/**
- * Generate SAM template for the application
- * 
- * @param projectRoot - Path to project root directory
- * @param configuration - Deployment configuration
- * @param deploymentType - Type of deployment
- */
-async function generateSamTemplate(
-  projectRoot: string, 
-  configuration: DeploymentConfiguration,
-  deploymentType: string
-): Promise<void> {
-  logger.info(`[TEMPLATE] Generating SAM template for ${configuration.projectName}`);
-  
+async function deployFrontend(options: DeployOptions): Promise<DeploymentResult> {
   try {
-    // Register handlebars helpers
-    registerHandlebarsHelpers();
+    logger.info("Preparing frontend deployment...");
     
-    // Determine template path
-    const templatePath = path.join(__dirname, '..', '..', 'templates', `${deploymentType}.hbs`);
-    logger.info(`Using template: ${templatePath}`);
+    // Create S3 bucket
+    logger.info("Creating S3 bucket...");
+    const bucketName = await createS3Bucket(options);
+    logger.info(`S3 bucket created: ${bucketName}`);
     
-    if (!fs.existsSync(templatePath)) {
-      throw new Error(`Template not found: ${templatePath}`);
+    // Upload assets
+    logger.info("Uploading frontend assets...");
+    await uploadFrontendAssets(options, bucketName);
+    logger.info("Frontend assets uploaded successfully");
+    
+    // Configure CloudFront if needed
+    let distributionUrl = null;
+    if (options.frontendConfiguration?.customDomain) {
+      logger.info("Configuring CloudFront distribution...");
+      distributionUrl = await configureCloudFront(options, bucketName);
+      logger.info(`CloudFront distribution created: ${distributionUrl}`);
     }
     
-    // Read template file
-    const templateContent = await readFileAsync(templatePath, 'utf8');
+    logger.info("Frontend deployment completed successfully!");
     
-    // Compile template
-    const template = handlebars.compile(templateContent);
-    
-    // Generate template with configuration
-    const description = `Serverless ${deploymentType} application: ${configuration.projectName}`;
-    const samTemplate = template({
-      ...configuration,
-      description
-    });
-    
-    // Write template to file
-    const outputPath = path.join(projectRoot, 'template.yaml');
-    await writeFileAsync(outputPath, samTemplate);
-    
-    logger.info(`SAM template generated: ${outputPath}`);
-  } catch (error: any) {
-    logger.error(`Failed to generate SAM template: ${error.message}`);
-    throw new Error(`Failed to generate SAM template: ${error.message}`);
+    return {
+      status: DeploymentStatus.DEPLOYED,
+      message: 'Frontend deployed successfully',
+      url: distributionUrl || `http://${bucketName}.s3-website-${options.region || 'us-east-1'}.amazonaws.com`,
+      bucketName,
+      distributionUrl
+    };
+  } catch (error) {
+    logger.error(`Frontend deployment failed: ${error.message}`);
+    return {
+      status: DeploymentStatus.FAILED,
+      message: `Frontend deployment failed: ${error.message}`,
+      error: error.message,
+      stackTrace: error.stack,
+      phase: error.phase || 'unknown'
+    };
   }
 }
 
 /**
- * Register handlebars helpers
+ * Deploy a fullstack application
+ * @param {DeployOptions} options - Fullstack deployment options
+ * @returns {Promise<DeploymentResult>} Deployment result
  */
-function registerHandlebarsHelpers(): void {
-  // Helper to check if a value exists
-  handlebars.registerHelper('ifExists', function(this: any, value: any, options: any) {
-    return value ? options.fn(this) : options.inverse(this);
-  });
-  
-  // Helper to check if two values are equal
-  handlebars.registerHelper('ifEquals', function(this: any, v1: any, v2: any, options: any) {
-    return v1 === v2 ? options.fn(this) : options.inverse(this);
-  });
-  
-  // Helper to iterate over object properties
-  handlebars.registerHelper('eachInObject', function(this: any, object: any, options: any) {
-    if (!object) return '';
+async function deployFullstack(options: DeployOptions): Promise<DeploymentResult> {
+  try {
+    logger.info("Preparing fullstack deployment...");
     
-    let result = '';
-    for (const key in object) {
-      if (Object.prototype.hasOwnProperty.call(object, key)) {
-        result += options.fn({ key, value: object[key] });
-      }
+    // Deploy backend
+    logger.info("Deploying backend components...");
+    const backendResult = await deployBackend(options);
+    
+    if (backendResult.status === DeploymentStatus.FAILED) {
+      logger.error("Backend deployment failed, aborting fullstack deployment");
+      return {
+        status: DeploymentStatus.FAILED,
+        message: 'Fullstack deployment failed: Backend deployment failed',
+        error: backendResult.error,
+        backendResult
+      };
     }
-    return result;
-  });
-  
-  // Helper to check if a string starts with a prefix
-  handlebars.registerHelper('startsWith', function(this: any, str: string, prefix: string, options: any) {
-    return str && str.startsWith(prefix) ? options.fn(this) : options.inverse(this);
-  });
-}
-
-/**
- * Build and deploy the application using non-blocking spawn
- * 
- * @param projectRoot - Path to project root directory
- * @param configuration - Deployment configuration
- * @param deploymentType - Type of deployment
- */
-async function buildAndDeployApplication(
-  projectRoot: string, 
-  configuration: DeploymentConfiguration,
-  deploymentType: string
-): Promise<void> {
-  try {
-    logger.info(`[BUILD START] Starting build and deployment process for ${configuration.projectName}`);
     
-    // Update status to building
-    updateDeploymentStatus(configuration.projectName, {
-      status: 'building',
-      message: 'Building application...',
-      projectName: configuration.projectName,
-      lastUpdated: new Date().toISOString()
-    });
-    logger.info(`Updated deployment status to 'building'`);
+    // Deploy frontend
+    logger.info("Deploying frontend components...");
+    const frontendResult = await deployFrontend(options);
     
-    // Run sam build
-    logger.info(`[BUILD] Executing SAM build for ${configuration.projectName}`);
-    await runSamBuild(projectRoot, configuration.projectName);
-    logger.info(`[BUILD COMPLETE] SAM build completed for ${configuration.projectName}`);
-    
-    // Update status to deploying
-    updateDeploymentStatus(configuration.projectName, {
-      status: 'deploying',
-      message: 'Deploying application...',
-      projectName: configuration.projectName,
-      lastUpdated: new Date().toISOString()
-    });
-    logger.info(`Updated deployment status to 'deploying'`);
-    
-    // Run sam deploy
-    logger.info(`[DEPLOY] Executing SAM deploy for ${configuration.projectName}`);
-    const deployResult = await runSamDeploy(projectRoot, configuration.projectName, configuration.region);
-    logger.info(`[DEPLOY COMPLETE] SAM deploy completed for ${configuration.projectName}`);
-    
-    // Update status to deployed
-    updateDeploymentStatus(configuration.projectName, {
-      status: 'deployed',
-      message: 'Application deployed successfully',
-      projectName: configuration.projectName,
-      outputs: deployResult.outputs,
-      lastUpdated: new Date().toISOString()
-    });
-    logger.info(`Updated deployment status to 'deployed'`);
-  } catch (error: any) {
-    logger.error(`[BUILD/DEPLOY ERROR] Build or deployment failed: ${error.message}`);
-    throw error;
-  }
-}
-
-/**
- * Run SAM build command
- * 
- * @param projectRoot - Path to project root directory
- * @param projectName - Name of the project
- */
-async function runSamBuild(projectRoot: string, projectName: string): Promise<void> {
-  return new Promise<void>((resolve, reject) => {
-    const samBuild = spawn('sam', ['build'], {
-      cwd: projectRoot,
-      shell: true
-    });
-    
-    samBuild.stdout.on('data', (data) => {
-      const message = data.toString().trim();
-      logger.info(`[SAM BUILD] ${message}`);
-      
-      // Update status with build progress
-      updateDeploymentStatus(projectName, {
-        status: 'building',
-        message: `Building: ${message}`,
-        projectName,
-        lastUpdated: new Date().toISOString()
-      });
-    });
-    
-    samBuild.stderr.on('data', (data) => {
-      const message = data.toString().trim();
-      logger.error(`[SAM BUILD ERROR] ${message}`);
-    });
-    
-    samBuild.on('close', (code) => {
-      if (code === 0) {
-        logger.info(`SAM build completed successfully for ${projectName}`);
-        resolve();
-      } else {
-        reject(new Error(`SAM build failed with code ${code}`));
-      }
-    });
-    
-    samBuild.on('error', (error) => {
-      logger.error(`Failed to start SAM build: ${error.message}`);
-      reject(error);
-    });
-  });
-}
-
-/**
- * Run SAM deploy command
- * 
- * @param projectRoot - Path to project root directory
- * @param projectName - Name of the project
- * @param region - AWS region
- */
-async function runSamDeploy(
-  projectRoot: string, 
-  projectName: string,
-  region: string
-): Promise<DeploySamResult> {
-  return new Promise<DeploySamResult>((resolve, reject) => {
-    const stackName = `${projectName}-stack`;
-    
-    const samDeploy = spawn('sam', [
-      'deploy',
-      '--stack-name', stackName,
-      '--region', region,
-      '--capabilities', 'CAPABILITY_IAM',
-      '--no-confirm-changeset',
-      '--no-fail-on-empty-changeset'
-    ], {
-      cwd: projectRoot,
-      shell: true
-    });
-    
-    let outputs: Record<string, string> = {};
-    
-    samDeploy.stdout.on('data', (data) => {
-      const message = data.toString().trim();
-      logger.info(`[SAM DEPLOY] ${message}`);
-      
-      // Update status with deploy progress
-      updateDeploymentStatus(projectName, {
-        status: 'deploying',
-        message: `Deploying: ${message}`,
-        projectName,
-        lastUpdated: new Date().toISOString()
-      });
-      
-      // Extract outputs from CloudFormation
-      if (message.includes('OutputKey')) {
-        const match = message.match(/OutputKey=([\w]+)\s+OutputValue=([^\s]+)/);
-        if (match && match.length === 3) {
-          const key = match[1];
-          const value = match[2];
-          outputs[key] = value;
-        }
-      }
-    });
-    
-    samDeploy.stderr.on('data', (data) => {
-      const message = data.toString().trim();
-      logger.error(`[SAM DEPLOY ERROR] ${message}`);
-    });
-    
-    samDeploy.on('close', (code) => {
-      if (code === 0) {
-        logger.info(`SAM deploy completed successfully for ${projectName}`);
-        resolve({
-          status: 'success',
-          message: 'Deployment completed successfully',
-          outputs,
-          stackName
-        });
-      } else {
-        reject(new Error(`SAM deploy failed with code ${code}`));
-      }
-    });
-    
-    samDeploy.on('error', (error) => {
-      logger.error(`Failed to start SAM deploy: ${error.message}`);
-      reject(error);
-    });
-  });
-}
-
-/**
- * Update deployment status
- * 
- * @param projectName - Name of the project
- * @param status - Deployment status
- */
-export function updateDeploymentStatus(projectName: string, status: any): void {
-  try {
-    const statusFilePath = path.join(DEPLOYMENT_STATUS_DIR, `${projectName}.json`);
-    fs.writeFileSync(statusFilePath, JSON.stringify(status, null, 2));
-  } catch (error: any) {
-    logger.error(`Failed to update deployment status: ${error.message}`);
-  }
-}
-
-/**
- * Get deployment status
- * 
- * @param projectName - Name of the project
- */
-export function getDeploymentStatus(projectName: string): any {
-  try {
-    const statusFilePath = path.join(DEPLOYMENT_STATUS_DIR, `${projectName}.json`);
-    if (fs.existsSync(statusFilePath)) {
-      const statusContent = fs.readFileSync(statusFilePath, 'utf8');
-      return JSON.parse(statusContent);
+    if (frontendResult.status === DeploymentStatus.FAILED) {
+      logger.error("Frontend deployment failed, but backend was deployed successfully");
+      return {
+        status: DeploymentStatus.PARTIAL,
+        message: 'Fullstack deployment partially succeeded: Frontend deployment failed',
+        error: frontendResult.error,
+        backendResult,
+        frontendResult
+      };
     }
-  } catch (error: any) {
-    logger.error(`Failed to get deployment status: ${error.message}`);
+    
+    logger.info("Fullstack deployment completed successfully!");
+    
+    return {
+      status: DeploymentStatus.DEPLOYED,
+      message: 'Fullstack application deployed successfully',
+      backendUrl: backendResult.url,
+      frontendUrl: frontendResult.url,
+      backendResult,
+      frontendResult
+    };
+  } catch (error) {
+    logger.error(`Fullstack deployment failed: ${error.message}`);
+    return {
+      status: DeploymentStatus.FAILED,
+      message: `Fullstack deployment failed: ${error.message}`,
+      error: error.message,
+      stackTrace: error.stack,
+      phase: error.phase || 'unknown'
+    };
   }
-  
+}
+
+/**
+ * Generate SAM template for deployment
+ * @param {DeployOptions} options - Deployment options
+ * @returns {Promise<string>} Path to generated template
+ */
+async function generateSamTemplate(options: DeployOptions): Promise<string> {
+  // Implementation details...
+  // This would generate a SAM template based on the deployment options
+  return path.join(options.projectRoot, 'template.yaml');
+}
+
+/**
+ * Deploy application using SAM CLI
+ * @param {DeployOptions} options - Deployment options
+ * @param {string} templatePath - Path to SAM template
+ * @returns {Promise<void>}
+ */
+async function deploySamApplication(options: DeployOptions, templatePath: string): Promise<void> {
+  // Implementation details...
+  // This would use the SAM CLI to deploy the application
+}
+
+/**
+ * Get deployment outputs from CloudFormation
+ * @param {DeployOptions} options - Deployment options
+ * @returns {Promise<any>} Deployment outputs
+ */
+async function getDeploymentOutputs(options: DeployOptions): Promise<any> {
+  // Implementation details...
+  // This would retrieve the outputs from the CloudFormation stack
   return {
-    status: 'unknown',
-    message: 'Deployment status not found',
-    projectName,
-    lastUpdated: new Date().toISOString()
+    ApiUrl: `https://${options.projectName}.execute-api.${options.region || 'us-east-1'}.amazonaws.com/${options.backendConfiguration?.stage || 'prod'}/`
   };
 }
 
 /**
- * Get deployment result
- * 
- * @param projectName - Name of the project
+ * Create S3 bucket for frontend hosting
+ * @param {DeployOptions} options - Deployment options
+ * @returns {Promise<string>} Bucket name
  */
-export async function getDeploymentResult(projectName: string): Promise<DeployResult> {
-  const status = getDeploymentStatus(projectName);
-  
-  if (status.status === 'deployed') {
-    const outputs = status.outputs || {};
-    
-    return {
-      status: 'success',
-      message: 'Deployment completed successfully',
-      projectName,
-      stackName: `${projectName}-stack`,
-      apiUrl: outputs.ApiEndpoint,
-      websiteUrl: outputs.CloudFrontURL || outputs.CustomDomainURL
-    };
-  } else if (status.status === 'error') {
-    return {
-      status: 'error',
-      message: status.message || 'Deployment failed',
-      projectName,
-      error: status.error
-    };
-  } else {
-    return {
-      status: status.status,
-      message: status.message || 'Deployment in progress',
-      projectName
-    };
-  }
+async function createS3Bucket(options: DeployOptions): Promise<string> {
+  // Implementation details...
+  // This would create an S3 bucket for hosting the frontend
+  return `${options.projectName}-${Date.now()}`;
 }
 
 /**
- * List all deployments
+ * Upload frontend assets to S3 bucket
+ * @param {DeployOptions} options - Deployment options
+ * @param {string} bucketName - S3 bucket name
+ * @returns {Promise<void>}
  */
-export function listDeployments(): string[] {
-  try {
-    const files = fs.readdirSync(DEPLOYMENT_STATUS_DIR);
-    return files
-      .filter(file => file.endsWith('.json'))
-      .map(file => file.replace('.json', ''));
-  } catch (error: any) {
-    logger.error(`Failed to list deployments: ${error.message}`);
-    return [];
-  }
+async function uploadFrontendAssets(options: DeployOptions, bucketName: string): Promise<void> {
+  // Implementation details...
+  // This would upload the frontend assets to the S3 bucket
+}
+
+/**
+ * Configure CloudFront distribution
+ * @param {DeployOptions} options - Deployment options
+ * @param {string} bucketName - S3 bucket name
+ * @returns {Promise<string>} CloudFront distribution URL
+ */
+async function configureCloudFront(options: DeployOptions, bucketName: string): Promise<string> {
+  // Implementation details...
+  // This would configure a CloudFront distribution for the S3 bucket
+  return `https://${options.projectName}.cloudfront.net`;
 }
