@@ -112,6 +112,52 @@ index.handler()`,
         "Remember that permissions set on your local machine will be preserved when deployed to Lambda"
       ]
     },
+    database: {
+      title: "Database Configuration",
+      description: "The deploy tool can create and configure database resources like DynamoDB tables as part of your deployment.",
+      capabilities: [
+        "Create new DynamoDB tables with specified schema",
+        "Configure table capacity (on-demand or provisioned)",
+        "Set up primary keys and attribute definitions",
+        "Integrate the database with your application"
+      ],
+      dynamodbExample: {
+        description: "Example DynamoDB configuration in the deploy tool:",
+        config: {
+          "databaseConfiguration": {
+            "tableName": "Users",
+            "attributeDefinitions": [
+              { "name": "id", "type": "S" },
+              { "name": "email", "type": "S" }
+            ],
+            "keySchema": [
+              { "name": "id", "type": "HASH" },
+              { "name": "email", "type": "RANGE" }
+            ],
+            "billingMode": "PAY_PER_REQUEST"
+          }
+        },
+        notes: [
+          "The tableName is required and must be unique within your AWS account in the specified region",
+          "attributeDefinitions define the data types for your attributes (S=String, N=Number, B=Binary)",
+          "keySchema defines your primary key (HASH) and sort key (RANGE) if applicable",
+          "billingMode can be PAY_PER_REQUEST (default) or PROVISIONED (requires readCapacity and writeCapacity)"
+        ]
+      },
+      bestPractices: [
+        "Use descriptive table names that reflect your application's domain",
+        "Design your key schema carefully to support your access patterns",
+        "Start with on-demand capacity (PAY_PER_REQUEST) for unpredictable workloads",
+        "Use environment variables to pass database names to your application"
+      ],
+      environmentVariables: {
+        description: "The deploy tool automatically sets these environment variables for your Lambda function:",
+        variables: {
+          "TABLE_NAME": "The name of your DynamoDB table",
+          "AWS_REGION": "The AWS region where your resources are deployed"
+        }
+      }
+    },
     project_structure: {
       title: "Project Structure Requirements",
       description: "The deployment tool expects a specific project structure.",
@@ -177,6 +223,21 @@ index.handler()`,
         "Wait for the deployment to complete",
         "Access your deployed application using the provided URL"
       ],
+      awsResources: {
+        description: "The deploy tool creates and configures these AWS resources:",
+        backend: [
+          "AWS Lambda function with your application code",
+          "API Gateway REST API or HTTP API",
+          "IAM roles and policies for Lambda execution",
+          "CloudWatch Log groups for monitoring",
+          "DynamoDB tables (if database configuration is provided)"
+        ],
+        frontend: [
+          "S3 bucket configured for static website hosting",
+          "CloudFront distribution for content delivery (optional)",
+          "Route 53 records for custom domains (if configured)"
+        ]
+      },
       bestPractices: [
         "Use a consistent project structure",
         "Include all dependencies in your built artifacts",

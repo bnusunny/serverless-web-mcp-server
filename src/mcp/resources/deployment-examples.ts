@@ -49,7 +49,19 @@ require('./app.js');`,
           "backendConfiguration": {
             "builtArtifactsPath": "/path/to/project/dist",
             "runtime": "nodejs18.x",
-            "startupScript": "app.js"
+            "startupScript": "app.js",
+            "databaseConfiguration": {
+              "tableName": "Users",
+              "attributeDefinitions": [
+                { "name": "id", "type": "S" },
+                { "name": "email", "type": "S" }
+              ],
+              "keySchema": [
+                { "name": "id", "type": "HASH" },
+                { "name": "email", "type": "RANGE" }
+              ],
+              "billingMode": "PAY_PER_REQUEST"
+            }
           }
         }
       },
@@ -89,7 +101,19 @@ require('./app.js');`,
           "backendConfiguration": {
             "builtArtifactsPath": "/path/to/project/backend/dist",
             "runtime": "nodejs18.x",
-            "startupScript": "app.js"
+            "startupScript": "app.js",
+            "databaseConfiguration": {
+              "tableName": "Products",
+              "attributeDefinitions": [
+                { "name": "id", "type": "S" },
+                { "name": "category", "type": "S" }
+              ],
+              "keySchema": [
+                { "name": "id", "type": "HASH" },
+                { "name": "category", "type": "RANGE" }
+              ],
+              "billingMode": "PAY_PER_REQUEST"
+            }
           },
           "frontendConfiguration": {
             "builtAssetsPath": "/path/to/project/frontend/build",
@@ -120,7 +144,19 @@ app.handler()`,
           "backendConfiguration": {
             "builtArtifactsPath": "/path/to/project/package",
             "runtime": "python3.9",
-            "startupScript": "app.py"
+            "startupScript": "app.py",
+            "databaseConfiguration": {
+              "tableName": "Tasks",
+              "attributeDefinitions": [
+                { "name": "taskId", "type": "S" },
+                { "name": "userId", "type": "S" }
+              ],
+              "keySchema": [
+                { "name": "taskId", "type": "HASH" },
+                { "name": "userId", "type": "RANGE" }
+              ],
+              "billingMode": "PAY_PER_REQUEST"
+            }
           }
         }
       }
@@ -145,6 +181,53 @@ java -jar app.jar`,
             "builtArtifactsPath": "/path/to/project/build/libs",
             "runtime": "java11",
             "startupScript": "start.sh"
+          }
+        }
+      }
+    },
+    database: {
+      dynamodb: {
+        simpleTable: {
+          description: "Simple DynamoDB table with just a partition key",
+          config: {
+            "tableName": "SimpleTable",
+            "attributeDefinitions": [
+              { "name": "id", "type": "S" }
+            ],
+            "keySchema": [
+              { "name": "id", "type": "HASH" }
+            ],
+            "billingMode": "PAY_PER_REQUEST"
+          }
+        },
+        compositeKeyTable: {
+          description: "DynamoDB table with composite key (partition + sort key)",
+          config: {
+            "tableName": "CompositeKeyTable",
+            "attributeDefinitions": [
+              { "name": "userId", "type": "S" },
+              { "name": "createdAt", "type": "S" }
+            ],
+            "keySchema": [
+              { "name": "userId", "type": "HASH" },
+              { "name": "createdAt", "type": "RANGE" }
+            ],
+            "billingMode": "PAY_PER_REQUEST"
+          }
+        },
+        provisionedCapacityTable: {
+          description: "DynamoDB table with provisioned capacity",
+          config: {
+            "tableName": "ProvisionedTable",
+            "attributeDefinitions": [
+              { "name": "id", "type": "S" }
+            ],
+            "keySchema": [
+              { "name": "id", "type": "HASH" }
+            ],
+            "billingMode": "PROVISIONED",
+            "readCapacity": 5,
+            "writeCapacity": 5
           }
         }
       }

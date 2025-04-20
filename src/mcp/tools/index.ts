@@ -20,7 +20,7 @@ export {
 export const toolDefinitions = [
   {
     name: 'deploy',
-    description: 'Deploy web applications to AWS serverless infrastructure',
+    description: 'Deploy web applications to AWS serverless infrastructure. Can also create and configure database resources like DynamoDB tables.',
     handler: handleDeploy,
     parameters: z.object({
       deploymentType: z.enum(['backend', 'frontend', 'fullstack']).describe('Type of deployment'),
@@ -43,19 +43,19 @@ export const toolDefinitions = [
           attributeDefinitions: z.array(
             z.object({
               name: z.string().describe('Attribute name'),
-              type: z.enum(['S', 'N', 'B']).describe('Attribute type')
+              type: z.enum(['S', 'N', 'B']).describe('Attribute type (S=String, N=Number, B=Binary)')
             })
           ).describe('DynamoDB attribute definitions'),
           keySchema: z.array(
             z.object({
               name: z.string().describe('Attribute name'),
-              type: z.enum(['HASH', 'RANGE']).describe('Key type')
+              type: z.enum(['HASH', 'RANGE']).describe('Key type (HASH=partition key, RANGE=sort key)')
             })
           ).describe('DynamoDB key schema'),
           billingMode: z.enum(['PROVISIONED', 'PAY_PER_REQUEST']).optional().default('PAY_PER_REQUEST').describe('DynamoDB billing mode'),
           readCapacity: z.number().optional().describe('Read capacity units (for PROVISIONED)'),
           writeCapacity: z.number().optional().describe('Write capacity units (for PROVISIONED)')
-        }).optional().describe('Database configuration')
+        }).optional().describe('Database configuration for creating DynamoDB tables')
       }).optional().describe('Backend configuration'),
       frontendConfiguration: z.object({
         builtAssetsPath: z.string().describe('Path to pre-built frontend assets (must contain index.html and all static files)'),
@@ -104,7 +104,7 @@ export const toolDefinitions = [
     description: 'Get help with deployment requirements and troubleshooting',
     handler: handleDeploymentHelp,
     parameters: z.object({
-      topic: z.enum(['startup_script', 'artifacts_path', 'permissions', 'project_structure', 'general']).describe('Help topic')
+      topic: z.enum(['startup_script', 'artifacts_path', 'permissions', 'project_structure', 'database', 'general']).describe('Help topic')
     })
   }
 ];
