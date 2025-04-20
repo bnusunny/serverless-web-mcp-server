@@ -91,13 +91,9 @@ export async function deploy(options: DeployOptions): Promise<DeployResult> {
     // Validate configuration
     validateConfiguration(configuration, deploymentType);
     
-    // Update deployment status
-    updateDeploymentStatus(projectName, {
-      status: 'preparing',
-      message: 'Preparing deployment...',
-      projectName,
-      lastUpdated: new Date().toISOString()
-    });
+    // Log deployment status
+    logger.info(`Deployment status for ${projectName}: preparing`);
+    logger.info('Preparing deployment...');
     
     // Generate SAM template
     await generateSamTemplate(projectRoot, configuration, deploymentType);
@@ -113,13 +109,8 @@ export async function deploy(options: DeployOptions): Promise<DeployResult> {
   } catch (error: any) {
     logger.error(`[DEPLOY ERROR] Deployment failed for ${projectName}: ${error.message}`);
     
-    // Update deployment status
-    updateDeploymentStatus(projectName, {
-      status: 'error',
-      message: `Deployment process failed: ${error.message}`,
-      projectName,
-      lastUpdated: new Date().toISOString()
-    });
+    // Log deployment error
+    logger.error(`Deployment process failed: ${error.message}`);
     
     return {
       status: 'error',
