@@ -25,33 +25,62 @@ export async function handleDeploymentHelp(params: { topic: string }) {
         "Must be included in your built artifacts",
         "Must be compatible with the specified runtime"
       ],
-      examples: {
-        nodejs: {
-          filename: "app.js",
-          content: `#!/usr/bin/env node
-// This is a sample startup script for Node.js
-// Make sure to run: chmod +x app.js
-require('./index.js');`,
-          buildSteps: [
-            "npm run build",
-            "chmod +x dist/app.js"
-          ]
+      automaticGeneration: {
+        description: "You can now automatically generate a startup script by providing:",
+        steps: [
+          "Specify the 'entryPoint' parameter pointing to your application's main file",
+          "Set 'generateStartupScript' to true"
+        ],
+        example: {
+          "backendConfiguration": {
+            "runtime": "nodejs18.x",
+            "entryPoint": "app.js",
+            "generateStartupScript": true
+          }
         },
-        python: {
-          filename: "app.py",
-          content: `#!/usr/bin/env python3
-# This is a sample startup script for Python
-# Make sure to run: chmod +x app.py
-import index
-index.handler()`,
-          buildSteps: [
-            "pip install -r requirements.txt -t ./package",
-            "cp *.py ./package/",
-            "chmod +x package/app.py"
-          ]
+        supportedRuntimes: [
+          "Node.js: nodejs14.x, nodejs16.x, nodejs18.x",
+          "Python: python3.7, python3.8, python3.9",
+          "Java: java8, java8.al2, java11",
+          ".NET: dotnet3.1, dotnet5.0, dotnet6",
+          "Go: go1.x",
+          "Ruby: ruby2.7"
+        ]
+      },
+      manualCreation: {
+        description: "If you prefer to create the startup script manually:",
+        examples: {
+          nodejs: {
+            filename: "bootstrap",
+            content: `#!/bin/bash
+# Set up Lambda Web Adapter
+export PORT=8080
+
+# Start the application
+exec node app.js`,
+            buildSteps: [
+              "npm run build",
+              "chmod +x dist/bootstrap"
+            ]
+          },
+          python: {
+            filename: "bootstrap",
+            content: `#!/bin/bash
+# Set up Lambda Web Adapter
+export PORT=8080
+
+# Start the application
+exec python app.py`,
+            buildSteps: [
+              "pip install -r requirements.txt -t ./package",
+              "cp bootstrap ./package/",
+              "chmod +x package/bootstrap"
+            ]
+          }
         }
       },
       troubleshooting: [
+        "If you get 'Entry point file not found' error, check that your entry point file exists in the built artifacts directory",
         "If you get 'Startup script not found' error, check the path to your script",
         "If you get 'Startup script is not executable' error, run 'chmod +x' on your script",
         "If your application crashes, check the CloudWatch logs for details"

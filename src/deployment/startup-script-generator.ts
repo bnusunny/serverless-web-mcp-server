@@ -22,16 +22,49 @@ export interface StartupScriptOptions {
 }
 
 /**
+ * Custom error class for entry point not found errors
+ */
+export class EntryPointNotFoundError extends Error {
+  constructor(entryPoint: string, builtArtifactsPath: string) {
+    super(`Entry point file not found: ${path.join(builtArtifactsPath, entryPoint)}`);
+    this.name = 'EntryPointNotFoundError';
+  }
+}
+
+/**
  * Generate a startup script based on runtime and entry point
  * @param options - Options for generating the startup script
  * @returns Path to the generated startup script
+ * @throws EntryPointNotFoundError if the entry point file doesn't exist
  */
 export async function generateStartupScript(options: StartupScriptOptions): Promise<string> {
   const { runtime, entryPoint, builtArtifactsPath } = options;
   const startupScriptName = options.startupScriptName || getDefaultStartupScriptName(runtime);
   const scriptPath = path.join(builtArtifactsPath, startupScriptName);
+  const entryPointPath = path.join(builtArtifactsPath, entryPoint);
   
   logger.info(`Generating startup script for runtime: ${runtime}, entry point: ${entryPoint}`);
+  
+  // Check if entry point exists
+  if (!fs.existsSync(entryPointPath)) {
+    const error = new EntryPointNotFoundError(entryPoint, builtArtifactsPath);
+    logger.error(error.message);
+    
+    // Provide helpful suggestions
+    logger.info('Available files in the artifacts directory:');
+    try {
+      const files = fs.readdirSync(builtArtifactsPath);
+      if (files.length === 0) {
+        logger.info('  (directory is empty)');
+      } else {
+        files.forEach(file => logger.info(`  - ${file}`));
+      }
+    } catch (err) {
+      logger.error(`Could not read directory: ${builtArtifactsPath}`);
+    }
+    
+    throw error;
+  }
   
   // Generate script content based on runtime
   const scriptContent = generateScriptContent(runtime, entryPoint, options.additionalEnv);

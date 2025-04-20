@@ -58,18 +58,26 @@ export async function deploy(options: DeployOptions): Promise<DeployResult> {
       
       logger.info(`Generating startup script for ${projectName}...`);
       
-      const startupScriptName = await generateStartupScript({
-        runtime: options.backendConfiguration.runtime,
-        entryPoint: options.backendConfiguration.entryPoint,
-        builtArtifactsPath: options.backendConfiguration.builtArtifactsPath,
-        startupScriptName: options.backendConfiguration.startupScript,
-        additionalEnv: options.backendConfiguration.environment
-      });
-      
-      // Update the configuration with the generated script name
-      options.backendConfiguration.startupScript = startupScriptName;
-      
-      logger.info(`Startup script generated: ${startupScriptName}`);
+      try {
+        const startupScriptName = await generateStartupScript({
+          runtime: options.backendConfiguration.runtime,
+          entryPoint: options.backendConfiguration.entryPoint,
+          builtArtifactsPath: options.backendConfiguration.builtArtifactsPath,
+          startupScriptName: options.backendConfiguration.startupScript,
+          additionalEnv: options.backendConfiguration.environment
+        });
+        
+        // Update the configuration with the generated script name
+        options.backendConfiguration.startupScript = startupScriptName;
+        
+        logger.info(`Startup script generated: ${startupScriptName}`);
+      } catch (error) {
+        if (error.name === 'EntryPointNotFoundError') {
+          // Provide a more helpful error message for entry point not found
+          throw new Error(`Failed to generate startup script: ${error.message}. Please check that your entry point file exists in the built artifacts directory and the path is correct.`);
+        }
+        throw error;
+      }
     }
     
     // Create deployment configuration
