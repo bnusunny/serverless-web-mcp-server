@@ -127,7 +127,13 @@ function validateCommonOptions(options: DeployOptions, result: ValidationResult)
       path: 'projectRoot',
       suggestion: 'Provide the path to your project root directory'
     });
-  } else if (!fs.existsSync(options.projectRoot)) {
+  } else {
+    // Convert relative path to absolute for validation
+    const absoluteProjectRoot = path.isAbsolute(options.projectRoot) 
+      ? options.projectRoot 
+      : path.resolve(process.cwd(), options.projectRoot);
+      
+    if (!fs.existsSync(absoluteProjectRoot)) {
     result.errors.push({
       code: 'INVALID_PROJECT_ROOT',
       message: `Project root directory does not exist: ${options.projectRoot}`,
@@ -259,7 +265,14 @@ function validateBuiltArtifactsPath(config: BackendDeployOptions, result: Valida
     return;
   }
   
-  if (!fs.existsSync(config.builtArtifactsPath)) {
+  // Convert relative path to absolute for validation
+  const absoluteArtifactsPath = path.isAbsolute(config.builtArtifactsPath) 
+    ? config.builtArtifactsPath 
+    : path.resolve(process.cwd(), config.builtArtifactsPath);
+  
+  logger.debug(`Checking built artifacts path: ${absoluteArtifactsPath}`);
+  
+  if (!fs.existsSync(absoluteArtifactsPath)) {
     result.errors.push({
       code: 'INVALID_ARTIFACTS_PATH',
       message: `Built artifacts path does not exist: ${config.builtArtifactsPath}`,
@@ -270,7 +283,7 @@ function validateBuiltArtifactsPath(config: BackendDeployOptions, result: Valida
   }
   
   // Check if the artifacts directory is empty
-  const files = fs.readdirSync(config.builtArtifactsPath);
+  const files = fs.readdirSync(absoluteArtifactsPath);
   if (files.length === 0) {
     result.errors.push({
       code: 'EMPTY_ARTIFACTS_PATH',
@@ -317,6 +330,8 @@ function validateStartupScript(config: BackendDeployOptions, result: ValidationR
   if (config.generateStartupScript && config.entryPoint) {
     // Validate entryPoint instead
     const entryPointPath = path.join(config.builtArtifactsPath, config.entryPoint);
+    
+    logger.debug(`Checking entry point file: ${entryPointPath}`);
     
     if (!fs.existsSync(entryPointPath)) {
       result.errors.push({
@@ -541,7 +556,14 @@ function validateBuiltAssetsPath(config: FrontendDeployOptions, result: Validati
     return;
   }
   
-  if (!fs.existsSync(config.builtAssetsPath)) {
+  // Convert relative path to absolute for validation
+  const absoluteAssetsPath = path.isAbsolute(config.builtAssetsPath) 
+    ? config.builtAssetsPath 
+    : path.resolve(process.cwd(), config.builtAssetsPath);
+  
+  logger.debug(`Checking built assets path: ${absoluteAssetsPath}`);
+  
+  if (!fs.existsSync(absoluteAssetsPath)) {
     result.errors.push({
       code: 'INVALID_ASSETS_PATH',
       message: `Built assets path does not exist: ${config.builtAssetsPath}`,
@@ -552,7 +574,7 @@ function validateBuiltAssetsPath(config: FrontendDeployOptions, result: Validati
   }
   
   // Check if the assets directory is empty
-  const files = fs.readdirSync(config.builtAssetsPath);
+  const files = fs.readdirSync(absoluteAssetsPath);
   if (files.length === 0) {
     result.errors.push({
       code: 'EMPTY_ASSETS_PATH',
@@ -570,7 +592,15 @@ function validateBuiltAssetsPath(config: FrontendDeployOptions, result: Validati
  */
 function validateIndexDocument(config: FrontendDeployOptions, result: ValidationResult): void {
   const indexDocument = config.indexDocument || 'index.html';
-  const indexPath = path.join(config.builtAssetsPath, indexDocument);
+  
+  // Convert relative path to absolute for validation
+  const absoluteAssetsPath = path.isAbsolute(config.builtAssetsPath) 
+    ? config.builtAssetsPath 
+    : path.resolve(process.cwd(), config.builtAssetsPath);
+  
+  const indexPath = path.join(absoluteAssetsPath, indexDocument);
+  
+  logger.debug(`Checking index document: ${indexPath}`);
   
   if (!fs.existsSync(indexPath)) {
     result.errors.push({
