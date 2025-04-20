@@ -11,6 +11,16 @@ The server supports deploying:
 - Frontend applications using S3 and CloudFront
 - Fullstack applications combining both backend and frontend components
 
+## New Feature: Automatic Dependency Installation
+
+The server now automatically handles dependencies for backend deployments:
+
+- **Node.js**: Copies package.json from project root if needed and runs `npm install --production`
+- **Python**: Copies requirements.txt and runs `pip install -r requirements.txt -t .`
+- **Ruby**: Copies Gemfile and runs `bundle install`
+
+This means you no longer need to include dependencies in your build artifacts - just provide your compiled code and the deployment process will handle the rest.
+
 ## MCP Implementation
 
 This server implements the Model Context Protocol with the following features:

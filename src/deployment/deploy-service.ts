@@ -22,6 +22,7 @@ import * as os from 'os';
 import { logger } from '../utils/logger.js';
 import { generateStartupScript, StartupScriptOptions } from './startup-script-generator.js';
 import { validateConfiguration } from './validation.js';
+import { installDependencies } from './dependency-installer.js';
 // We're not importing uploadFrontendAssets since it's handled in deploy.ts
 // import { uploadFrontendAssets } from './frontend-upload.js';
 
@@ -113,6 +114,27 @@ export async function deploy(options: DeployOptions): Promise<DeployResult> {
           throw new Error(`Failed to generate startup script: ${error.message}. Please check that your entry point file exists in the built artifacts directory and the path is correct.`);
         }
         throw error;
+      }
+    }
+    
+    // Install dependencies for backend deployments
+    if ((deploymentType === 'backend' || deploymentType === 'fullstack') && 
+        options.backendConfiguration) {
+      
+      logger.info(`Installing dependencies for ${projectName}...`);
+      
+      try {
+        await installDependencies(
+          projectRoot,
+          options.backendConfiguration.builtArtifactsPath,
+          options.backendConfiguration.runtime
+        );
+        
+        logger.info(`Dependencies installed successfully for ${projectName}`);
+      } catch (error) {
+        logger.warn(`Failed to install dependencies: ${error.message}`);
+        // Continue with deployment even if dependency installation fails
+        // This allows users to bundle dependencies themselves if needed
       }
     }
     

@@ -62,11 +62,22 @@ export PORT=8080
 exec node app.js
 \`\`\`
 
+## Dependencies
+
+The deployment process will automatically attempt to install dependencies based on your runtime:
+
+- **Node.js**: Will copy package.json from your project root (if not already in the build artifacts) and run \`npm install --production\`
+- **Python**: Will copy requirements.txt and run \`pip install -r requirements.txt -t .\`
+- **Ruby**: Will copy Gemfile and run \`bundle install\`
+
+Make sure your dependency files (package.json, requirements.txt, etc.) are either in your project root or already included in your build artifacts.
+
 ## Common Issues
 
 - **Entry point not found**: Ensure your entry point file exists in the built artifacts directory
 - **Script not executable**: If creating manually, run \`chmod +x bootstrap\`
 - **Wrong runtime**: Make sure you're using the correct runtime for your application
+- **Missing dependencies**: Check if your dependency files are correctly placed
 
 ## Supported Runtimes
 
@@ -129,10 +140,9 @@ The built artifacts path should contain all the files needed to run your applica
 
 ## Requirements
 
-- Must include all dependencies
-- Must be built for the target runtime
+- Must include your compiled/transpiled application code
 - Must include the startup script or entry point file
-- Must be ready for execution without additional build steps
+- Dependencies will be automatically installed by the deployment process
 
 ## Node.js Example
 
@@ -144,24 +154,24 @@ npm run build
 
 Typical path: \`./dist\`
 
-package.json:
-\`\`\`json
-{
-  "scripts": {
-    "build": "tsc && cp package.json dist/ && cd dist && npm install --production"
-  }
-}
-\`\`\`
-
 ## Python Example
 
 Build commands:
 \`\`\`bash
-pip install -r requirements.txt -t ./package
+# Compile Python files if needed
 cp *.py ./package/
 \`\`\`
 
 Typical path: \`./package\`
+
+## Dependency Handling
+
+The deployment process will automatically:
+1. Look for dependency files (package.json, requirements.txt, etc.) in your build artifacts
+2. If not found there, copy them from your project root
+3. Install dependencies in the build artifacts directory
+
+This means you don't need to include node_modules or other dependency directories in your build artifacts.
 
 ## Examples
 
