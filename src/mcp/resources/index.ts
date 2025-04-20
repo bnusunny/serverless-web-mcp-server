@@ -11,12 +11,14 @@ export { default as templateList } from './template-list.js';
 export { default as templateDetails } from './template-details.js';
 export { default as deploymentDetails } from './deployment-details.js';
 export { default as deploymentList } from './deloyment-list.js';
+export { default as deploymentExamples } from './deployment-examples.js';
 
 // Import all resources
 import templateList from './template-list.js';
 import templateDetails from './template-details.js';
 import deploymentDetails from './deployment-details.js';
 import deploymentList from './deloyment-list.js';
+import deploymentExamples from './deployment-examples.js';
 
 /**
  * Resource interface defining the structure of an MCP resource
@@ -34,6 +36,7 @@ const resources = [
   templateDetails,
   deploymentList,
   deploymentDetails,
+  deploymentExamples,
 ];
 
 export default resources;

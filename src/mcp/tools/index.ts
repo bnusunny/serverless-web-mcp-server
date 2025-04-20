@@ -5,13 +5,15 @@
 import { handleDeploy } from './deploy.js';
 import { handleGetLogs } from './get-logs.js';
 import { handleGetMetrics } from './get-metrics.js';
+import { handleDeploymentHelp } from './deployment-help.js';
 import { z } from 'zod';
 
 // Export tool handlers
 export {
   handleDeploy,
   handleGetLogs,
-  handleGetMetrics
+  handleGetMetrics,
+  handleDeploymentHelp
 };
 
 // Define tool definitions
@@ -23,13 +25,13 @@ export const toolDefinitions = [
     parameters: z.object({
       deploymentType: z.enum(['backend', 'frontend', 'fullstack']).describe('Type of deployment'),
       projectName: z.string().describe('Project name'),
-      projectRoot: z.string().describe('Path to the project root directory'),
-      region: z.string().optional().default('us-east-1').describe('AWS region, default to "us-east-1"'),
+      projectRoot: z.string().describe('Path to the project root directory where SAM template will be generated'),
+      region: z.string().optional().default('us-east-1').describe('AWS region'),
       backendConfiguration: z.object({
-        builtArtifactsPath: z.string().describe('Path to pre-built backend artifacts'),
+        builtArtifactsPath: z.string().describe('Path to pre-built backend artifacts (must contain all dependencies and be ready for execution)'),
         framework: z.string().optional().describe('Backend framework'),
-        runtime: z.string().describe('Lambda runtime'),
-        startupScript: z.string().describe('Name of the startup script file (must be executable in Lambda (Linux) environment and take no parameters)'),
+        runtime: z.string().describe('Lambda runtime (e.g. nodejs18.x, python3.9)'),
+        startupScript: z.string().describe('Startup script that must be executable in Linux environment (chmod +x) and take no parameters. This is the entry point for your application.'),
         architecture: z.enum(['x86_64', 'arm64']).optional().default('x86_64').describe('Lambda architecture'),
         memorySize: z.number().optional().default(512).describe('Lambda memory size'),
         timeout: z.number().optional().default(30).describe('Lambda timeout'),
@@ -56,7 +58,7 @@ export const toolDefinitions = [
         }).optional().describe('Database configuration')
       }).optional().describe('Backend configuration'),
       frontendConfiguration: z.object({
-        builtAssetsPath: z.string().describe('Path to pre-built frontend assets'),
+        builtAssetsPath: z.string().describe('Path to pre-built frontend assets (must contain index.html and all static files)'),
         framework: z.string().optional().describe('Frontend framework'),
         indexDocument: z.string().optional().default('index.html').describe('Index document'),
         errorDocument: z.string().optional().describe('Error document'),
@@ -95,6 +97,14 @@ export const toolDefinitions = [
       statistics: z.array(
         z.enum(['Average', 'Maximum', 'Minimum', 'Sum', 'SampleCount', 'p90', 'p95', 'p99'])
       ).optional().default(['Average', 'p90', 'p99']).describe('Statistics to retrieve')
+    })
+  },
+  {
+    name: 'deployment_help',
+    description: 'Get help with deployment requirements and troubleshooting',
+    handler: handleDeploymentHelp,
+    parameters: z.object({
+      topic: z.enum(['startup_script', 'artifacts_path', 'permissions', 'project_structure', 'general']).describe('Help topic')
     })
   }
 ];
