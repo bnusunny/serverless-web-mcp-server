@@ -86,6 +86,44 @@ export async function deploy(options: DeployOptions): Promise<DeployResult> {
       logger.info(`Frontend assets path: ${options.frontendConfiguration.builtAssetsPath}`);
     }
   
+  // Convert relative project root to absolute path
+  const projectRoot = path.isAbsolute(options.projectRoot) 
+    ? options.projectRoot 
+    : path.resolve(process.cwd(), options.projectRoot);
+  
+  logger.info(`[DEPLOY START] Starting deployment process for ${projectName}`);
+  logger.info(`Deployment type: ${deploymentType}`);
+  logger.info(`Project root: ${projectRoot}`);
+  
+  try {
+    // If backend configuration exists, convert relative paths to absolute
+    if ((deploymentType === 'backend' || deploymentType === 'fullstack') && 
+        options.backendConfiguration) {
+      
+      if (!path.isAbsolute(options.backendConfiguration.builtArtifactsPath)) {
+        options.backendConfiguration.builtArtifactsPath = path.resolve(
+          process.cwd(), 
+          options.backendConfiguration.builtArtifactsPath
+        );
+      }
+      
+      logger.info(`Backend artifacts path: ${options.backendConfiguration.builtArtifactsPath}`);
+    }
+    
+    // If frontend configuration exists, convert relative paths to absolute
+    if ((deploymentType === 'frontend' || deploymentType === 'fullstack') && 
+        options.frontendConfiguration) {
+      
+      if (!path.isAbsolute(options.frontendConfiguration.builtAssetsPath)) {
+        options.frontendConfiguration.builtAssetsPath = path.resolve(
+          process.cwd(), 
+          options.frontendConfiguration.builtAssetsPath
+        );
+      }
+      
+      logger.info(`Frontend assets path: ${options.frontendConfiguration.builtAssetsPath}`);
+    }
+  
   logger.info(`[DEPLOY START] Starting deployment process for ${projectName}`);
   logger.info(`Deployment type: ${deploymentType}`);
   
