@@ -15,7 +15,8 @@ import {
   DeployResult, 
   DeploymentConfiguration,
   DeploySamResult,
-  BackendDeployOptions
+  BackendDeployOptions,
+  DeploymentStatus
 } from '../types/index.js';
 import * as os from 'os';
 import { logger } from '../utils/logger.js';
