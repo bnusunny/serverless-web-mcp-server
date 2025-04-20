@@ -1,155 +1,126 @@
 # AWS Lambda Web Adapter
 
-The AWS Lambda Web Adapter allows you to run web applications on AWS Lambda without any code changes. This document explains how the adapter works and how it's integrated into the serverless-web-mcp-server.
+The AWS Lambda Web Adapter allows you to run web applications on AWS Lambda without any code changes. This document explains how it works and how to use it with the serverless-web-mcp tool.
 
 ## Overview
 
-AWS Lambda Web Adapter is a Lambda layer that transforms HTTP requests from API Gateway into a format that web frameworks can understand, and transforms responses back to the format expected by API Gateway.
+AWS Lambda Web Adapter is a lightweight adapter that translates API Gateway or Lambda Function URL events into HTTP requests that your web application can understand. It allows you to run any web application that listens on HTTP in AWS Lambda.
 
 ## How It Works
 
-1. API Gateway receives an HTTP request
-2. The request is forwarded to Lambda
-3. Lambda Web Adapter intercepts the request
-4. The adapter transforms the request into a standard HTTP request
-5. The web application processes the request and returns a response
-6. The adapter transforms the response back to the format expected by Lambda
-7. Lambda returns the response to API Gateway
-8. API Gateway returns the response to the client
+1. API Gateway or Lambda Function URL receives an HTTP request
+2. The request is converted to a Lambda event and passed to your Lambda function
+3. Lambda Web Adapter converts the Lambda event back into an HTTP request
+4. Your web application processes the HTTP request and returns an HTTP response
+5. Lambda Web Adapter converts the HTTP response back into a Lambda response
+6. The response is returned to API Gateway or Lambda Function URL
 
-## Bootstrap File Generation
+## Startup Script
 
-The serverless-web-mcp-server automatically generates a bootstrap file for your web application based on the framework and project structure. This bootstrap file is responsible for starting your web application when the Lambda function is invoked.
+The Lambda Web Adapter requires a startup script to launch your web application. This script is responsible for:
 
-### Hybrid Approach
+1. Setting up the environment (e.g., setting the PORT variable)
+2. Starting your web application
 
-The server uses a hybrid approach to generate the bootstrap file:
+### Manual Startup Script Creation
 
-1. **Framework Detection**: If the framework is not specified, the server analyzes the project structure to detect the framework.
-2. **Entry Point Detection**: If the entry point is not specified, the server analyzes the project structure to detect the entry point.
-3. **User Input**: If the framework or entry point cannot be detected, the server prompts the user for input.
-
-### Supported Frameworks
-
-The server supports the following frameworks:
-
-- **Node.js**:
-  - Express.js
-  - Next.js
-  - Koa
-  - Fastify
-  - Generic Node.js
-
-- **Python**:
-  - Flask
-  - FastAPI
-  - Django
-  - Generic Python
-
-- **Ruby**:
-  - Rails
-  - Sinatra
-  - Generic Ruby
-
-### Bootstrap File Examples
-
-#### Express.js
+You can create a startup script manually. Here's an example for a Node.js application:
 
 ```bash
 #!/bin/bash
-# Bootstrap script for express application
-set -e
-
-# Set environment variables
-export NODE_ENV=production
+# Set up Lambda Web Adapter
+export PORT=8080
 
 # Start the application
 exec node app.js
 ```
 
-#### Flask
+Make sure the script is executable:
 
 ```bash
-#!/bin/bash
-# Bootstrap script for Flask application
-set -e
-
-# Set environment variables
-export FLASK_APP=app.py
-export FLASK_ENV=production
-
-# Start the application
-exec python -m flask run --host=0.0.0.0 --port=$PORT
+chmod +x bootstrap
 ```
 
-#### FastAPI
+### Automatic Startup Script Generation
 
-```bash
-#!/bin/bash
-# Bootstrap script for FastAPI application
-set -e
+The serverless-web-mcp tool now supports automatic generation of startup scripts. Instead of creating a startup script manually, you can provide:
 
-# Start the application
-exec uvicorn main:app --host=0.0.0.0 --port=$PORT
+1. The application entry point file (e.g., `app.js`, `app.py`)
+2. Set `generateStartupScript` to `true`
+
+The tool will automatically:
+- Generate an appropriate startup script for your runtime
+- Make it executable
+- Configure it to work with Lambda Web Adapter
+
+#### Example Configuration
+
+```json
+{
+  "deploymentType": "backend",
+  "projectName": "my-api",
+  "projectRoot": "/path/to/project",
+  "backendConfiguration": {
+    "builtArtifactsPath": "/path/to/built/artifacts",
+    "runtime": "nodejs18.x",
+    "entryPoint": "app.js",
+    "generateStartupScript": true
+  }
+}
 ```
 
-## Lambda Web Adapter Layer
+## Supported Runtimes
 
-The server uses the AWS Lambda Web Adapter layer provided by AWS. The layer ARN is:
+The Lambda Web Adapter supports the following runtimes:
 
-- x86_64: `arn:aws:lambda:${AWS::Region}:753240598075:layer:LambdaAdapterLayerX86:24`
-- arm64: `arn:aws:lambda:${AWS::Region}:753240598075:layer:LambdaAdapterLayerArm64:24`
+- Node.js (nodejs14.x, nodejs16.x, nodejs18.x)
+- Python (python3.7, python3.8, python3.9)
+- Java (java8, java8.al2, java11)
+- .NET (dotnet3.1, dotnet5.0, dotnet6)
+- Go (go1.x)
+- Ruby (ruby2.7)
 
-## Configuration
+## Environment Variables
 
-The Lambda Web Adapter is configured through environment variables:
+The Lambda Web Adapter uses the following environment variables:
 
 - `PORT`: The port on which your web application listens (default: 8080)
-- `AWS_LAMBDA_EXEC_WRAPPER`: The path to the bootstrap wrapper (default: /opt/bootstrap)
+- `AWS_LAMBDA_FUNCTION_TIMEOUT`: The Lambda function timeout in seconds
 
-## Framework-Specific Configuration
+## Best Practices
 
-### Express.js
-
-```yaml
-Environment:
-  Variables:
-    PORT: 8080
-    AWS_LAMBDA_EXEC_WRAPPER: /opt/bootstrap
-    NODE_OPTIONS: --enable-source-maps
-```
-
-### Flask
-
-```yaml
-Environment:
-  Variables:
-    PORT: 8080
-    AWS_LAMBDA_EXEC_WRAPPER: /opt/bootstrap
-    FLASK_APP: app.py
-```
-
-### FastAPI
-
-```yaml
-Environment:
-  Variables:
-    PORT: 8080
-    AWS_LAMBDA_EXEC_WRAPPER: /opt/bootstrap
-    APP_MODULE: main:app
-```
+1. **Use a Framework**: Web frameworks like Express.js, Flask, or Spring Boot work well with Lambda Web Adapter
+2. **Keep Dependencies Light**: Include only necessary dependencies to reduce cold start times
+3. **Handle Timeouts**: Ensure your application handles timeouts gracefully
+4. **Use Async Processing**: For long-running tasks, use async processing or step functions
+5. **Test Locally**: Test your application locally before deploying to Lambda
 
 ## Troubleshooting
 
-If you encounter issues with the Lambda Web Adapter, check the following:
+### Common Issues
 
-1. **Bootstrap File**: Make sure the bootstrap file is executable (`chmod +x bootstrap`)
-2. **Environment Variables**: Make sure the environment variables are set correctly
-3. **Entry Point**: Make sure the entry point is correct
-4. **Dependencies**: Make sure all dependencies are installed
-5. **Lambda Logs**: Check the Lambda logs for error messages
+1. **Startup Script Not Executable**:
+   - Error: `fork/exec /var/task/bootstrap: permission denied`
+   - Solution: Make sure your startup script is executable (`chmod +x bootstrap`)
 
-## References
+2. **Application Not Listening on Correct Port**:
+   - Error: `Connection refused` or timeout
+   - Solution: Make sure your application listens on the port specified by the `PORT` environment variable
+
+3. **Timeout Issues**:
+   - Error: `Task timed out after X seconds`
+   - Solution: Increase the Lambda timeout or optimize your application
+
+### Debugging
+
+To debug issues with Lambda Web Adapter:
+
+1. Check CloudWatch Logs for error messages
+2. Add debug logging to your application
+3. Test your application locally with the same environment variables
+
+## Resources
 
 - [AWS Lambda Web Adapter GitHub Repository](https://github.com/awslabs/aws-lambda-web-adapter)
-- [AWS Lambda Web Adapter Documentation](https://docs.aws.amazon.com/lambda/latest/dg/lambda-web-adapter.html)
+- [AWS Lambda Function Handler in Node.js](https://docs.aws.amazon.com/lambda/latest/dg/nodejs-handler.html)
+- [AWS Lambda Function Handler in Python](https://docs.aws.amazon.com/lambda/latest/dg/python-handler.html)

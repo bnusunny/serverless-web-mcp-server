@@ -33,7 +33,9 @@ export interface BackendDeployOptions {
   builtArtifactsPath: string;
   framework?: string;
   runtime: string;
-  startupScript: string;
+  startupScript?: string;  // Now optional if entryPoint is provided
+  entryPoint?: string;     // New field for application entry point
+  generateStartupScript?: boolean; // Flag to enable startup script generation
   architecture?: 'x86_64' | 'arm64';
   memorySize?: number;
   timeout?: number;

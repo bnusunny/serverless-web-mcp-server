@@ -313,12 +313,30 @@ function validateRuntime(config: BackendDeployOptions, result: ValidationResult)
  * @param {ValidationResult} result - Validation result to update
  */
 function validateStartupScript(config: BackendDeployOptions, result: ValidationResult): void {
+  // If generateStartupScript is true and entryPoint is provided, we don't need to validate startupScript
+  if (config.generateStartupScript && config.entryPoint) {
+    // Validate entryPoint instead
+    const entryPointPath = path.join(config.builtArtifactsPath, config.entryPoint);
+    
+    if (!fs.existsSync(entryPointPath)) {
+      result.errors.push({
+        code: 'ENTRY_POINT_NOT_FOUND',
+        message: `Entry point file not found: ${entryPointPath}`,
+        path: 'backendConfiguration.entryPoint',
+        suggestion: 'Check that your entry point file is included in your built artifacts'
+      });
+    }
+    
+    return;
+  }
+  
+  // Otherwise, validate startupScript as before
   if (!config.startupScript) {
     result.errors.push({
       code: 'MISSING_STARTUP_SCRIPT',
-      message: 'Startup script is required',
+      message: 'Either startupScript or entryPoint with generateStartupScript=true is required',
       path: 'backendConfiguration.startupScript',
-      suggestion: 'Provide the name of your startup script file'
+      suggestion: 'Provide a startup script name or set entryPoint and generateStartupScript=true'
     });
     return;
   }
