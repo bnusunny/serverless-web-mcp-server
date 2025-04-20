@@ -113,8 +113,9 @@ export async function deploy(options: DeployOptions): Promise<DeployResult> {
     logger.error(`Deployment process failed: ${error.message}`);
     
     return {
-      status: 'error',
+      status: DeploymentStatus.FAILED,
       message: `Deployment failed: ${error.message}`,
+      error: error.message,
       projectName
     };
   }

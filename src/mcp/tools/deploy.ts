@@ -37,6 +37,12 @@ export async function handleDeploy(params) {
       case DeploymentStatus.FAILED:
         logger.error(`Deployment failed for project: ${params.projectName}`);
         return formatErrorResponse(result, params.deploymentType);
+      
+      case 'error': // Handle legacy 'error' status
+        logger.error(`Deployment failed for project: ${params.projectName}`);
+        // Convert to proper DeploymentStatus.FAILED
+        result.status = DeploymentStatus.FAILED;
+        return formatErrorResponse(result, params.deploymentType);
         
       default:
         logger.warn(`Unknown deployment status: ${result.status}`);
