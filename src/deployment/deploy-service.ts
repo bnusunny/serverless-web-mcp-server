@@ -9,7 +9,7 @@ import * as fs from 'fs';
 import { promisify } from 'util';
 import { exec, spawn } from 'child_process';
 import handlebars from 'handlebars';
-import { fileURLToPath } from 'url';
+// Remove fileURLToPath import
 import { 
   DeployOptions, 
   DeployResult, 
@@ -21,8 +21,8 @@ import { logger } from '../utils/logger.js';
 // We're not importing uploadFrontendAssets since it's handled in deploy.ts
 // import { uploadFrontendAssets } from './frontend-upload.js';
 
-// ES modules equivalent of __dirname
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
+// Get directory path for CommonJS
+const __dirname = path.resolve();
 
 const execAsync = promisify(exec);
 const writeFileAsync = promisify(fs.writeFile);

@@ -3,8 +3,6 @@
  */
 
 import { handleDeploy } from './deploy.js';
-import { handleConfigureDomain } from './configure-domain.js';
-import { handleProvisionDatabase } from './provision-database.js';
 import { handleGetLogs } from './get-logs.js';
 import { handleGetMetrics } from './get-metrics.js';
 import { z } from 'zod';
@@ -12,8 +10,6 @@ import { z } from 'zod';
 // Export tool handlers
 export {
   handleDeploy,
-  handleConfigureDomain,
-  handleProvisionDatabase,
   handleGetLogs,
   handleGetMetrics
 };
@@ -67,52 +63,6 @@ export const toolDefinitions = [
         customDomain: z.string().optional().describe('Custom domain'),
         certificateArn: z.string().optional().describe('ACM certificate ARN')
       }).optional().describe('Frontend configuration')
-    })
-  },
-  {
-    name: 'configure_domain',
-    description: 'Set up custom domains and SSL certificates for deployed applications',
-    handler: handleConfigureDomain,
-    parameters: z.object({
-      projectName: z.string().describe('Name of the deployed project'),
-      domainName: z.string().describe('Custom domain name to configure'),
-      region: z.string().optional().default('us-east-1').describe('AWS region'),
-      createCertificate: z.boolean().optional().default(true).describe('Whether to create a new ACM certificate'),
-      certificateArn: z.string().optional().describe('Existing ACM certificate ARN (if not creating a new one)'),
-      hostedZoneId: z.string().optional().describe('Route53 hosted zone ID (if using Route53)')
-    })
-  },
-  {
-    name: 'provision_database',
-    description: 'Create and configure database resources for applications',
-    handler: handleProvisionDatabase,
-    parameters: z.object({
-      projectName: z.string().describe('Name of the project'),
-      databaseType: z.enum(['dynamodb', 'aurora-serverless']).describe('Type of database to provision'),
-      region: z.string().optional().default('us-east-1').describe('AWS region'),
-      tableName: z.string().describe('DynamoDB table name'),
-      attributeDefinitions: z.array(
-        z.object({
-          name: z.string().describe('Attribute name'),
-          type: z.enum(['S', 'N', 'B']).describe('Attribute type')
-        })
-      ).describe('DynamoDB attribute definitions'),
-      keySchema: z.array(
-        z.object({
-          name: z.string().describe('Attribute name'),
-          type: z.enum(['HASH', 'RANGE']).describe('Key type')
-        })
-      ).describe('DynamoDB key schema'),
-      billingMode: z.enum(['PROVISIONED', 'PAY_PER_REQUEST']).optional().default('PAY_PER_REQUEST').describe('DynamoDB billing mode'),
-      readCapacity: z.number().optional().describe('Read capacity units (for PROVISIONED)'),
-      writeCapacity: z.number().optional().describe('Write capacity units (for PROVISIONED)'),
-      databaseName: z.string().describe('Database name'),
-      engine: z.enum(['aurora-mysql', 'aurora-postgresql']).optional().default('aurora-postgresql').describe('Database engine'),
-      username: z.string().optional().default('admin').describe('Master username'),
-      password: z.string().optional().describe('Master password (if not provided, will be generated)'),
-      minCapacity: z.number().optional().default(1).describe('Minimum ACU capacity'),
-      maxCapacity: z.number().optional().default(8).describe('Maximum ACU capacity'),
-      backupRetentionPeriod: z.number().optional().default(7).describe('Backup retention period in days')
     })
   },
   {
