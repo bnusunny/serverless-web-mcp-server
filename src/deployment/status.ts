@@ -18,7 +18,7 @@ if (!fs.existsSync(DEPLOYMENT_METADATA_DIR)) {
  */
 export async function initializeDeploymentStatus(projectName: string, deploymentType: string, framework: string): Promise<void> {
   const metadataFile = path.join(DEPLOYMENT_METADATA_DIR, `${projectName}.json`);
-  const stackName = `${projectName}-stack`;
+  const stackName = projectName;
   
   try {
     // Create the metadata file with minimal information
@@ -113,7 +113,7 @@ export async function getDeploymentStatus(projectName: string): Promise<any> {
     }
     
     // Get stack info from CloudFormation
-    const stackName = metadata.stackName || `${projectName}-stack`;
+    const stackName = metadata.stackName || projectName;
     const region = metadata.region || process.env.AWS_REGION || 'us-east-1';
     
     try {

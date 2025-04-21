@@ -259,7 +259,7 @@ async function buildAndDeployApplication(
 ): Promise<any> {
   logger.info('Deploying application...');
   
-  const stackName = `${configuration.projectName}-${Date.now().toString().slice(-6)}`;
+  const stackName = configuration.projectName;
   
   try {
     // Create samconfig.toml file
