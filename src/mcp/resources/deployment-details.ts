@@ -5,6 +5,7 @@
  */
 
 import { McpResource } from './index.js';
+import { ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { getDeploymentStatus } from '../../deployment/status.js';
 import { logger } from '../../utils/logger.js';
 
@@ -102,7 +103,7 @@ export async function handleDeploymentDetails(params: any): Promise<any> {
  */
 const deploymentDetailsResource: McpResource = {
   name: 'deployment-details',
-  uri: 'deployment:{projectName}',
+  uri: new ResourceTemplate("deployment:{projectName}", { list: "deployment:list" }),
   description: 'Get details about a specific deployment',
   handler: async (uri: URL, variables?: any) => {
     return handleDeploymentDetails({ projectName: variables?.projectName });
