@@ -12,8 +12,7 @@ import { logger } from '../../utils/logger.js';
 /**
  * Handler for the deployment details resource
  */
-export async function handleDeploymentDetails(params: any): Promise<any> {
-  const { projectName } = params;
+export async function handleDeploymentDetails(projectName: string): Promise<any> {
   logger.debug('Deployment details resource called', { projectName });
 
   try {
@@ -109,8 +108,27 @@ const deploymentDetailsResource: McpResource = {
   name: 'deployment-details',
   uri: new ResourceTemplate("deployment:{projectName}", { list: undefined }),
   description: 'Get details about a specific deployment',
-  handler: async (uri: URL, variables?: any) => {
-    return handleDeploymentDetails({ projectName: variables?.projectName });
+  handler: async (uri: URL, variables: any) => {
+    // Extract projectName directly from variables
+    const projectName = variables.projectName;
+    logger.debug('Handler received variables:', { variables, projectName });
+    
+    if (!projectName) {
+      return {
+        contents: [{
+          uri: 'deployment:error',
+          text: JSON.stringify({
+            error: 'Missing project name',
+            message: 'The project name is required to retrieve deployment details.'
+          }, null, 2)
+        }],
+        metadata: {
+          error: 'Missing project name'
+        }
+      };
+    }
+    
+    return handleDeploymentDetails(projectName);
   }
 };
 
