@@ -69,7 +69,14 @@ export async function handleDeploy(params: DeployOptions): Promise<any> {
     if ((params.deploymentType === 'backend' || params.deploymentType === 'fullstack') && 
         params.backendConfiguration) {
       
-      const fullArtifactsPath = path.resolve(params.projectRoot, params.backendConfiguration.builtArtifactsPath);
+      // Determine the full path to artifacts directory
+      let fullArtifactsPath = params.backendConfiguration.builtArtifactsPath;
+      
+      // If builtArtifactsPath is not an absolute path, resolve it against projectRoot
+      if (!path.isAbsolute(fullArtifactsPath)) {
+        fullArtifactsPath = path.resolve(params.projectRoot, params.backendConfiguration.builtArtifactsPath);
+      }
+      
       const depsInstalled = checkDependenciesInstalled(
         fullArtifactsPath,
         params.backendConfiguration.runtime
