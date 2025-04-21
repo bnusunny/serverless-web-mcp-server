@@ -46,8 +46,9 @@ require('./app.js');`,
           "deploymentType": "backend",
           "projectName": "nodejs-api",
           "projectRoot": "/path/to/project",
+          "region": "us-east-1",
           "backendConfiguration": {
-            "builtArtifactsPath": "/path/to/project/dist",
+            "builtArtifactsPath": "dist",
             "runtime": "nodejs18.x",
             "entryPoint": "app.js",
             "generateStartupScript": true,
@@ -86,8 +87,9 @@ require('./app.js');`,
           "deploymentType": "frontend",
           "projectName": "nodejs-website",
           "projectRoot": "/path/to/project",
+          "region": "us-east-1",
           "frontendConfiguration": {
-            "builtAssetsPath": "/path/to/project/build",
+            "builtAssetsPath": "build",
             "indexDocument": "index.html",
             "errorDocument": "index.html"
           }
@@ -102,8 +104,9 @@ require('./app.js');`,
           "deploymentType": "fullstack",
           "projectName": "nodejs-fullstack",
           "projectRoot": "/path/to/project",
+          "region": "us-east-1",
           "backendConfiguration": {
-            "builtArtifactsPath": "/path/to/project/backend/dist",
+            "builtArtifactsPath": "backend/dist",
             "runtime": "nodejs18.x",
             "entryPoint": "app.js",
             "generateStartupScript": true,
@@ -124,7 +127,7 @@ require('./app.js');`,
             }
           },
           "frontendConfiguration": {
-            "builtAssetsPath": "/path/to/project/frontend/build",
+            "builtAssetsPath": "frontend/build",
             "indexDocument": "index.html",
             "errorDocument": "index.html"
           }
@@ -144,8 +147,9 @@ require('./app.js');`,
           "deploymentType": "backend",
           "projectName": "python-api",
           "projectRoot": "/path/to/project",
+          "region": "us-east-1",
           "backendConfiguration": {
-            "builtArtifactsPath": "/path/to/project/app",
+            "builtArtifactsPath": "app",
             "runtime": "python3.9",
             "entryPoint": "app.py",
             "generateStartupScript": true,
@@ -182,8 +186,9 @@ require('./app.js');`,
           "deploymentType": "backend",
           "projectName": "ruby-api",
           "projectRoot": "/path/to/project",
+          "region": "us-east-1",
           "backendConfiguration": {
-            "builtArtifactsPath": "/path/to/project/app",
+            "builtArtifactsPath": "app",
             "runtime": "ruby2.7",
             "entryPoint": "app.rb",
             "generateStartupScript": true,
@@ -206,8 +211,9 @@ require('./app.js');`,
           "deploymentType": "backend",
           "projectName": "java-api",
           "projectRoot": "/path/to/project",
+          "region": "us-east-1",
           "backendConfiguration": {
-            "builtArtifactsPath": "/path/to/project/build/libs",
+            "builtArtifactsPath": "build/libs",
             "runtime": "java11",
             "entryPoint": "app.jar",
             "generateStartupScript": true,
@@ -288,6 +294,7 @@ module.exports = app;`
         description: "Python Flask framework",
         entryPoint: "app.py",
         sampleCode: `from flask import Flask, jsonify
+import os
 
 app = Flask(__name__)
 
@@ -303,6 +310,7 @@ if __name__ == '__main__':
         entryPoint: "app.py",
         sampleCode: `from fastapi import FastAPI
 import uvicorn
+import os
 
 app = FastAPI()
 
@@ -350,6 +358,35 @@ ReactDOM.render(
         {
           issue: "Lambda timeout",
           solution: "Increase the timeout value in your backendConfiguration (default is 30 seconds)."
+        },
+        {
+          issue: "Path resolution issues",
+          solution: "Remember that builtArtifactsPath and builtAssetsPath can be relative to projectRoot. For example, if projectRoot is '/home/user/project', then builtArtifactsPath: 'dist' will resolve to '/home/user/project/dist'."
+        }
+      ]
+    },
+    pathResolution: {
+      description: "How paths are resolved in deployment parameters",
+      examples: [
+        {
+          scenario: "Absolute paths",
+          projectRoot: "/home/user/project",
+          builtArtifactsPath: "/home/user/project/dist",
+          explanation: "When builtArtifactsPath is absolute, it's used as-is"
+        },
+        {
+          scenario: "Relative paths",
+          projectRoot: "/home/user/project",
+          builtArtifactsPath: "dist",
+          resolvedPath: "/home/user/project/dist",
+          explanation: "When builtArtifactsPath is relative, it's resolved against projectRoot"
+        },
+        {
+          scenario: "Nested project structure",
+          projectRoot: "/home/user/project",
+          builtArtifactsPath: "backend/dist",
+          resolvedPath: "/home/user/project/backend/dist",
+          explanation: "Works with nested directories too"
         }
       ]
     }
@@ -384,6 +421,10 @@ ReactDOM.render(
     {
       uri: "deployment:examples:troubleshooting",
       text: JSON.stringify(examples.troubleshooting, null, 2)
+    },
+    {
+      uri: "deployment:examples:pathResolution",
+      text: JSON.stringify(examples.pathResolution, null, 2)
     }
   ];
 
