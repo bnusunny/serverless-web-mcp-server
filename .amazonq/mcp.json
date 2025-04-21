@@ -1,6 +1,6 @@
 {
     "mcpServers": {
-        "use_sam": {
+        "aws_sam": {
             "command": "serverless-web-mcp",
             "args": [
                 "--debug"
