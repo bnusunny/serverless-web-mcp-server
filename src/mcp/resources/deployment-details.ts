@@ -22,25 +22,28 @@ export async function handleDeploymentDetails(params: any): Promise<any> {
     
     if (!deployment || deployment.status === 'not_found') {
       return {
-        contents: [
-          {
-            type: "text",
-            text: JSON.stringify({
-              error: `Deployment not found for project: ${projectName}`,
-              message: `No deployment information available for ${projectName}. Make sure you have initiated a deployment for this project.`
-            }, null, 2)
-          }
-        ]
+        contents: [{
+          uri: `deployment:${projectName}`,
+          text: JSON.stringify({
+            error: `Deployment not found for project: ${projectName}`,
+            message: `No deployment information available for ${projectName}. Make sure you have initiated a deployment for this project.`
+          }, null, 2)
+        }],
+        metadata: {
+          projectName
+        }
       };
     }
     
     // Format the response based on deployment status
-    let responseText = '';
+    let responseData: any = {
+      projectName,
+      status: deployment.status
+    };
     
     if (deployment.status === 'completed') {
-      responseText = JSON.stringify({
-        projectName,
-        status: deployment.status,
+      responseData = {
+        ...responseData,
         success: true,
         deploymentUrl: deployment.endpoint,
         resources: {
@@ -52,48 +55,49 @@ export async function handleDeploymentDetails(params: any): Promise<any> {
         outputs: deployment.outputs,
         stackName: deployment.stackName,
         deploymentId: deployment.stackId
-      }, null, 2);
+      };
     } else if (deployment.status === 'failed') {
-      responseText = JSON.stringify({
-        projectName,
-        status: deployment.status,
+      responseData = {
+        ...responseData,
         success: false,
         error: deployment.stackStatusReason || deployment.message,
         stackName: deployment.stackName,
         deploymentId: deployment.stackId
-      }, null, 2);
+      };
     } else {
       // Deployment is still in progress
-      responseText = JSON.stringify({
-        projectName,
-        status: deployment.status,
+      responseData = {
+        ...responseData,
         message: `Deployment is currently in progress (${deployment.stackStatus || deployment.status}).`,
         stackName: deployment.stackName,
         deploymentId: deployment.stackId,
         note: "Check this resource again in a few moments for updated status."
-      }, null, 2);
+      };
     }
     
+    // Return in the format expected by MCP protocol
     return {
-      contents: [
-        {
-          type: "text",
-          text: responseText
-        }
-      ]
+      contents: [{
+        uri: `deployment:${projectName}`,
+        text: JSON.stringify(responseData, null, 2)
+      }],
+      metadata: {
+        projectName
+      }
     };
   } catch (error: any) {
     logger.error('Deployment details resource error', { error: error.message, stack: error.stack });
     
     return {
-      contents: [
-        {
-          type: "text",
-          text: JSON.stringify({
-            error: `Failed to get deployment details: ${error.message}`
-          }, null, 2)
-        }
-      ]
+      contents: [{
+        uri: `deployment:error`,
+        text: JSON.stringify({
+          error: `Failed to get deployment details: ${error.message}`
+        }, null, 2)
+      }],
+      metadata: {
+        error: error.message
+      }
     };
   }
 }
