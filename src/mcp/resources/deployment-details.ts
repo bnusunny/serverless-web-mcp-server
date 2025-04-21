@@ -101,7 +101,7 @@ export async function handleDeploymentDetails(params: any): Promise<any> {
  * Deployment details resource definition
  */
 const deploymentDetailsResource: McpResource = {
-  name: 'Deployment Details',
+  name: 'deployment-details',
   uri: 'deployment:{projectName}',
   description: 'Get details about a specific deployment',
   handler: async (uri: URL, variables?: any) => {

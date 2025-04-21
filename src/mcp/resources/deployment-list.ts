@@ -55,7 +55,7 @@ async function handleDeploymentsList(): Promise<any> {
  * Deployment List resource definition
  */
 const deploymentList: McpResource = {
-  name: 'Deployment List',
+  name: 'deployment-list',
   uri: 'deployment:list',
   description: 'List of all AWS deployments managed by the MCP server',
   handler: handleDeploymentsList
