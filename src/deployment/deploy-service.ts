@@ -120,7 +120,7 @@ export async function deployApplication(options: DeployOptions): Promise<DeployR
         options.backendConfiguration.startupScript = startupScriptName;
         
         logger.info(`Startup script generated: ${startupScriptName}`);
-      } catch (error) {
+      } catch (error: any) {
         if (error.name === 'EntryPointNotFoundError') {
           // Provide a more helpful error message for entry point not found
           throw new Error(`Failed to generate startup script: ${error.message}. Please check that your entry point file exists in the built artifacts directory and the path is correct.`);
@@ -143,7 +143,7 @@ export async function deployApplication(options: DeployOptions): Promise<DeployR
         );
         
         logger.info(`Dependencies installed successfully for ${projectName}`);
-      } catch (error) {
+      } catch (error: any) {
         logger.warn(`Failed to install dependencies: ${error.message}`);
         // Continue with deployment even if dependency installation fails
         // This allows users to bundle dependencies themselves if needed
@@ -232,17 +232,19 @@ export async function deployApplication(options: DeployOptions): Promise<DeployR
 async function generateSamTemplate(
   projectRoot: string,
   configuration: DeploymentConfiguration,
-  deploymentType: string
+  deploymentType: 'backend' | 'frontend' | 'fullstack'
 ): Promise<void> {
   logger.info('Generating SAM template...');
   
   try {
     // Create the deployment parameters object
     const deploymentParams = {
+      projectRoot,
       deploymentType,
       projectName: configuration.projectName,
       region: configuration.region,
-      ...configuration
+      backendConfiguration: configuration.backendConfiguration,
+      frontendConfiguration: configuration.frontendConfiguration
     };
     
     // Render the template using the template renderer
@@ -253,7 +255,7 @@ async function generateSamTemplate(
     fs.writeFileSync(templatePath, renderedTemplate);
     
     logger.info(`SAM template generated at ${templatePath}`);
-  } catch (error) {
+  } catch (error: any) {
     logger.error(`Failed to generate SAM template: ${error}`);
     throw new Error(`Failed to generate SAM template: ${error instanceof Error ? error.message : String(error)}`);
   }
