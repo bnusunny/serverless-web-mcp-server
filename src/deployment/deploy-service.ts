@@ -285,7 +285,8 @@ capabilities = "CAPABILITY_IAM"
         '--stack-name', stackName,
         '--region', configuration.region,
         '--capabilities', 'CAPABILITY_IAM',
-        '--no-confirm-changeset'
+        '--no-confirm-changeset',
+        '--no-fail-on-empty-changeset'
       ], {
         cwd: projectRoot,
         stdio: 'inherit'
