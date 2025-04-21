@@ -5,7 +5,6 @@
  */
 
 import { McpResource } from './index.js';
-import { ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { listDeployments } from '../../deployment/status.js';
 import { logger } from '../../utils/logger.js';
 
@@ -57,7 +56,7 @@ async function handleDeploymentsList(): Promise<any> {
  */
 const deploymentList: McpResource = {
   name: 'deployment-list',
-  uri: new ResourceTemplate("deployment:list", {}),
+  uri: 'deployment:list',
   description: 'List of all AWS deployments managed by the MCP server',
   handler: handleDeploymentsList
 };
