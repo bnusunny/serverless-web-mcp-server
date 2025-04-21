@@ -22,7 +22,7 @@ export async function handleDeploymentDetails(params: any): Promise<any> {
     
     if (!deployment || deployment.status === 'not_found') {
       return {
-        content: [
+        contents: [
           {
             type: "text",
             text: JSON.stringify({
@@ -75,7 +75,7 @@ export async function handleDeploymentDetails(params: any): Promise<any> {
     }
     
     return {
-      content: [
+      contents: [
         {
           type: "text",
           text: responseText
@@ -86,7 +86,7 @@ export async function handleDeploymentDetails(params: any): Promise<any> {
     logger.error('Deployment details resource error', { error: error.message, stack: error.stack });
     
     return {
-      content: [
+      contents: [
         {
           type: "text",
           text: JSON.stringify({
