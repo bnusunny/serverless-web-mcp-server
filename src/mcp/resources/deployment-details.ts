@@ -5,7 +5,7 @@
  */
 
 import { McpResource } from './index.js';
-import { getDeploymentStatus } from '../../deployment/deploy-service.js';
+import { getDeploymentStatus } from '../../deployment/status.js';
 import { logger } from '../../utils/logger.js';
 
 /**
@@ -16,10 +16,10 @@ export async function handleDeploymentDetails(params: any): Promise<any> {
     const { projectName } = params;
     logger.debug('Deployment details resource called', { projectName });
     
-    // Get deployment status
-    const deployment = getDeploymentStatus(projectName);
+    // Get deployment status - using the async function from status.ts
+    const deployment = await getDeploymentStatus(projectName);
     
-    if (!deployment) {
+    if (!deployment || deployment.status === 'not_found') {
       return {
         content: [
           {
@@ -36,34 +36,39 @@ export async function handleDeploymentDetails(params: any): Promise<any> {
     // Format the response based on deployment status
     let responseText = '';
     
-    if (deployment.status === 'COMPLETE') {
+    if (deployment.status === 'completed') {
       responseText = JSON.stringify({
         projectName,
         status: deployment.status,
-        success: deployment.success,
-        deploymentUrl: deployment.url,
-        resources: deployment.resources,
+        success: true,
+        deploymentUrl: deployment.endpoint,
+        resources: {
+          api: deployment.outputs?.ApiUrl || null,
+          website: deployment.outputs?.WebsiteURL || null,
+          distribution: deployment.outputs?.CloudFrontDistribution || null,
+          bucket: deployment.outputs?.WebsiteBucket || null
+        },
         outputs: deployment.outputs,
         stackName: deployment.stackName,
-        deploymentId: deployment.deploymentId
+        deploymentId: deployment.stackId
       }, null, 2);
-    } else if (deployment.status === 'FAILED') {
+    } else if (deployment.status === 'failed') {
       responseText = JSON.stringify({
         projectName,
         status: deployment.status,
-        success: deployment.success,
-        error: deployment.error,
+        success: false,
+        error: deployment.stackStatusReason || deployment.message,
         stackName: deployment.stackName,
-        deploymentId: deployment.deploymentId
+        deploymentId: deployment.stackId
       }, null, 2);
     } else {
       // Deployment is still in progress
       responseText = JSON.stringify({
         projectName,
         status: deployment.status,
-        message: `Deployment is currently in progress (${deployment.status}).`,
+        message: `Deployment is currently in progress (${deployment.stackStatus || deployment.status}).`,
         stackName: deployment.stackName,
-        deploymentId: deployment.deploymentId,
+        deploymentId: deployment.stackId,
         note: "Check this resource again in a few moments for updated status."
       }, null, 2);
     }

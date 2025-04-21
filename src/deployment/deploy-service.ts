@@ -24,16 +24,10 @@ import { logger } from '../utils/logger.js';
 import { generateStartupScript, StartupScriptOptions } from './startup-script-generator.js';
 import { installDependencies } from './dependency-installer.js';
 import { uploadFrontendAssets } from './frontend-upload.js';
+import { initializeDeploymentStatus, storeDeploymentMetadata, storeDeploymentError } from './status.js';
 
 // Get directory path for CommonJS
 const __dirname = path.resolve();
-
-// In-memory store for deployment status
-const deploymentStore: Record<string, any> = {};
-
-const execAsync = promisify(exec);
-const writeFileAsync = promisify(fs.writeFile);
-const readFileAsync = promisify(fs.readFile);
 
 // Define the directory where deployment status files will be stored
 const DEPLOYMENT_STATUS_DIR = path.join(os.tmpdir(), 'serverless-web-mcp-deployments');
@@ -59,15 +53,10 @@ export async function deployApplication(options: DeployOptions): Promise<DeployR
   
   logger.info(`[DEPLOY START] Starting deployment process for ${projectName}`);
   
-  // Update deployment status in store
-  deploymentStore[projectName] = {
-    projectName,
-    status: DeploymentStatus.IN_PROGRESS,
-    success: false,
-    stackName: `${projectName}-${Date.now().toString().slice(-6)}`,
-    deploymentId: `${projectName}-${Date.now()}`,
-    createdAt: new Date().toISOString()
-  };
+  // Update deployment status using the status.ts module
+  await initializeDeploymentStatus(projectName, deploymentType, 
+    options.backendConfiguration?.framework || options.frontendConfiguration?.framework || 'unknown');
+  
   logger.info(`Deployment type: ${deploymentType}`);
   logger.info(`Project root: ${projectRoot}`);
   
@@ -130,25 +119,25 @@ export async function deployApplication(options: DeployOptions): Promise<DeployR
     }
     
     // Install dependencies for backend deployments
-    if ((deploymentType === 'backend' || deploymentType === 'fullstack') && 
-        options.backendConfiguration) {
+    // if ((deploymentType === 'backend' || deploymentType === 'fullstack') && 
+    //     options.backendConfiguration) {
       
-      logger.info(`Installing dependencies for ${projectName}...`);
+    //   logger.info(`Installing dependencies for ${projectName}...`);
       
-      try {
-        await installDependencies(
-          projectRoot,
-          options.backendConfiguration.builtArtifactsPath,
-          options.backendConfiguration.runtime
-        );
+    //   try {
+    //     await installDependencies(
+    //       projectRoot,
+    //       options.backendConfiguration.builtArtifactsPath,
+    //       options.backendConfiguration.runtime
+    //     );
         
-        logger.info(`Dependencies installed successfully for ${projectName}`);
-      } catch (error: any) {
-        logger.warn(`Failed to install dependencies: ${error.message}`);
-        // Continue with deployment even if dependency installation fails
-        // This allows users to bundle dependencies themselves if needed
-      }
-    }
+    //     logger.info(`Dependencies installed successfully for ${projectName}`);
+    //   } catch (error: any) {
+    //     logger.warn(`Failed to install dependencies: ${error.message}`);
+    //     // Continue with deployment even if dependency installation fails
+    //     // This allows users to bundle dependencies themselves if needed
+    //   }
+    // }
     
     // Create deployment configuration
     const configuration: DeploymentConfiguration = {
@@ -181,9 +170,8 @@ export async function deployApplication(options: DeployOptions): Promise<DeployR
     // Get deployment result
     const result = await getDeploymentResult(projectName);
     
-    // Update deployment status in store
-    deploymentStore[projectName] = {
-      ...deploymentStore[projectName],
+    // Update deployment status with success information
+    await storeDeploymentMetadata(projectName, {
       status: DeploymentStatus.DEPLOYED,
       success: true,
       outputs: deployResult.outputs,
@@ -196,7 +184,7 @@ export async function deployApplication(options: DeployOptions): Promise<DeployR
       },
       stackName: deployResult.stackName,
       updatedAt: new Date().toISOString()
-    };
+    });
     
     logger.info(`[DEPLOY COMPLETE] Deployment completed for ${projectName}`);
     return result;
@@ -206,12 +194,8 @@ export async function deployApplication(options: DeployOptions): Promise<DeployR
     // Log deployment error
     logger.error(`Deployment process failed: ${error.message}`);
     
-    // Update deployment status in store
-    if (deploymentStore[projectName]) {
-      deploymentStore[projectName].status = DeploymentStatus.FAILED;
-      deploymentStore[projectName].error = error.message;
-      deploymentStore[projectName].updatedAt = new Date().toISOString();
-    }
+    // Update deployment status with error information
+    await storeDeploymentError(projectName, error);
     
     return {
       status: DeploymentStatus.FAILED,
@@ -375,79 +359,14 @@ async function getDeploymentResult(projectName: string): Promise<DeployResult> {
     projectName
   };
 }
+
 /**
- * Get the status of a deployment
+ * Get the status of a deployment - this is now just a wrapper around the status.ts implementation
  * @param {string} projectName - Project name
- * @returns {object|null} Deployment status object or null if not found
+ * @returns {Promise<object|null>} Deployment status object or null if not found
  */
-export function getDeploymentStatus(projectName: string): any {
-  logger.debug(`Getting deployment status for ${projectName}`);
-  
-  // Check if we have the deployment in our store
-  if (deploymentStore[projectName]) {
-    return deploymentStore[projectName];
-  }
-  
-  // Try to get deployment information from CloudFormation
-  try {
-    // Look for stacks with the project name prefix
-    const cmd = `aws cloudformation describe-stacks --query "Stacks[?starts_with(StackName, '${projectName}-')]|[0]" --output json`;
-    const { stdout } = require('child_process').execSync(cmd, { encoding: 'utf8' });
-    
-    if (!stdout || stdout.trim() === 'null') {
-      logger.debug(`No deployment found for ${projectName}`);
-      return null;
-    }
-    
-    const stack = JSON.parse(stdout);
-    
-    // Format outputs
-    const outputs: Record<string, string> = {};
-    if (stack.Outputs && Array.isArray(stack.Outputs)) {
-      stack.Outputs.forEach((output: any) => {
-        outputs[output.OutputKey] = output.OutputValue;
-      });
-    }
-    
-    // Determine deployment status
-    let status = DeploymentStatus.IN_PROGRESS;
-    let success = false;
-    let error = null;
-    
-    if (stack.StackStatus.includes('COMPLETE') && !stack.StackStatus.includes('IN_PROGRESS')) {
-      status = DeploymentStatus.DEPLOYED;
-      success = true;
-    } else if (stack.StackStatus.includes('FAILED') || stack.StackStatus.includes('ROLLBACK')) {
-      status = DeploymentStatus.FAILED;
-      error = `Deployment failed with status: ${stack.StackStatus}`;
-    }
-    
-    // Create deployment result
-    const deployment = {
-      projectName,
-      status,
-      success,
-      error,
-      stackName: stack.StackName,
-      deploymentId: stack.StackId,
-      outputs,
-      url: outputs.ApiUrl || outputs.WebsiteUrl || null,
-      resources: {
-        api: outputs.ApiUrl || null,
-        website: outputs.WebsiteUrl || null,
-        distribution: outputs.CloudFrontDistribution || null,
-        bucket: outputs.WebsiteBucket || null
-      },
-      createdAt: stack.CreationTime,
-      updatedAt: stack.LastUpdatedTime || stack.CreationTime
-    };
-    
-    // Store the deployment
-    deploymentStore[projectName] = deployment;
-    
-    return deployment;
-  } catch (error) {
-    logger.error(`Error getting deployment status for ${projectName}:`, error);
-    return null;
-  }
+export async function getDeploymentStatus(projectName: string): Promise<any> {
+  // Import and use the getDeploymentStatus function from status.ts
+  const { getDeploymentStatus: getStatus } = await import('./status.js');
+  return getStatus(projectName);
 }
