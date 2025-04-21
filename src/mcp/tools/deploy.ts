@@ -10,6 +10,37 @@ import { deployApplication } from '../../deployment/deploy-service.js';
 import { DeployOptions } from '../../deployment/types.js';
 import { logger } from '../../utils/logger.js';
 import path from 'path';
+import fs from 'fs';
+
+/**
+ * Checks if dependencies appear to be installed in the builtArtifactsPath
+ */
+function checkDependenciesInstalled(builtArtifactsPath: string, runtime: string): boolean {
+  try {
+    // For Node.js, check for node_modules directory
+    if (runtime.includes('nodejs')) {
+      return fs.existsSync(path.join(builtArtifactsPath, 'node_modules'));
+    }
+    
+    // For Python, check for site-packages or dist-packages directories
+    if (runtime.includes('python')) {
+      return fs.existsSync(path.join(builtArtifactsPath, 'site-packages')) || 
+             fs.existsSync(path.join(builtArtifactsPath, '.venv')) ||
+             fs.existsSync(path.join(builtArtifactsPath, 'dist-packages'));
+    }
+    
+    // For Ruby, check for vendor/bundle directory
+    if (runtime.includes('ruby')) {
+      return fs.existsSync(path.join(builtArtifactsPath, 'vendor/bundle'));
+    }
+    
+    // For other runtimes, assume dependencies are installed
+    return true;
+  } catch (error) {
+    logger.error('Error checking for dependencies', error);
+    return false;
+  }
+}
 
 /**
  * Handler for the deploy tool
@@ -21,10 +52,66 @@ export async function handleDeploy(params: DeployOptions): Promise<any> {
     // Validate that projectRoot is provided and is an absolute path or convert it
     if (!params.projectRoot) {
       return {
-        success: false,
-        message: "Project root is required",
-        error: "Missing required parameter: projectRoot"
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify({
+              success: false,
+              message: "Project root is required",
+              error: "Missing required parameter: projectRoot"
+            }, null, 2)
+          }
+        ]
       };
+    }
+    
+    // Check for dependencies if this is a backend deployment
+    if ((params.deploymentType === 'backend' || params.deploymentType === 'fullstack') && 
+        params.backendConfiguration) {
+      
+      const fullArtifactsPath = path.resolve(params.projectRoot, params.backendConfiguration.builtArtifactsPath);
+      const depsInstalled = checkDependenciesInstalled(
+        fullArtifactsPath,
+        params.backendConfiguration.runtime
+      );
+      
+      if (!depsInstalled) {
+        let instructions = "";
+        
+        if (params.backendConfiguration.runtime.includes('nodejs')) {
+          instructions = `1. Copy package.json to ${params.backendConfiguration.builtArtifactsPath}\n2. Run 'npm install --omit-dev' in ${params.backendConfiguration.builtArtifactsPath}`;
+        } else if (params.backendConfiguration.runtime.includes('python')) {
+          instructions = `1. Copy requirements.txt to ${params.backendConfiguration.builtArtifactsPath}\n2. Run 'pip install -r requirements.txt -t .' in ${params.backendConfiguration.builtArtifactsPath}`;
+        } else if (params.backendConfiguration.runtime.includes('ruby')) {
+          instructions = `1. Copy Gemfile to ${params.backendConfiguration.builtArtifactsPath}\n2. Run 'bundle install' in ${params.backendConfiguration.builtArtifactsPath}`;
+        } else {
+          instructions = `Install all required dependencies in ${params.backendConfiguration.builtArtifactsPath}`;
+        }
+        
+        const errorMessage = `
+IMPORTANT: Dependencies not found in builtArtifactsPath (${params.backendConfiguration.builtArtifactsPath}).
+
+For ${params.backendConfiguration.runtime}, please:
+
+${instructions}
+
+Please install dependencies and try again.
+        `;
+        
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify({
+                success: false,
+                message: "Dependencies not found in builtArtifactsPath",
+                error: "Missing dependencies",
+                instructions: errorMessage
+              }, null, 2)
+            }
+          ]
+        };
+      }
     }
     
     // Start the deployment process in the background with setTimeout(0)
