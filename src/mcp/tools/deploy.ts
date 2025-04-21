@@ -85,9 +85,20 @@ async function checkDestructiveDeploymentChange(projectName: string, newType: st
     );
     
     if (isDestructive) {
+      let recommendation = '';
+      
+      // Provide specific recommendations based on the change
+      if (currentType === 'backend' && newType === 'frontend') {
+        recommendation = "Consider using 'fullstack' deployment type instead, which can maintain your backend while adding frontend capabilities.";
+      } else if (currentType === 'frontend' && newType === 'backend') {
+        recommendation = "Consider using 'fullstack' deployment type instead, which can maintain your frontend while adding backend capabilities.";
+      } else if (currentType === 'fullstack') {
+        recommendation = "Consider keeping the 'fullstack' deployment type and simply updating the configuration you need.";
+      }
+      
       return {
         isDestructive: true,
-        warning: `WARNING: Changing deployment type from ${currentType} to ${newType} is destructive and may result in data loss. Existing resources will be deleted. Please confirm you want to proceed with this change.`
+        warning: `WARNING: Changing deployment type from ${currentType} to ${newType} is destructive and will delete existing resources, potentially causing data loss. ${recommendation}`
       };
     }
     
@@ -133,7 +144,7 @@ export async function handleDeploy(params: DeployOptions): Promise<any> {
               message: "Destructive deployment type change detected",
               warning: destructiveCheck.warning,
               error: "Destructive change requires confirmation",
-              action: "Please confirm this destructive change by adding 'confirmDestructiveChange: true' to your deployment parameters."
+              action: "Please reconsider your deployment strategy based on the recommendation above."
             }, null, 2)
           }
         ]
@@ -256,7 +267,6 @@ const deployTool: McpTool = {
     projectName: z.string().describe('Project name'),
     projectRoot: z.string().describe('Absolute path to the project root directory where SAM template will be generated. Must be an absolute path (e.g., /home/user/projects/myapp)'),
     region: z.string().optional().default('us-east-1').describe('AWS region'),
-    confirmDestructiveChange: z.boolean().optional().default(false).describe('Set to true to confirm destructive deployment type changes'),
     backendConfiguration: z.object({
       builtArtifactsPath: z.string().describe('Path to pre-built backend artifacts. Can be absolute or relative to projectRoot'),
       framework: z.string().optional().describe('Backend framework'),
