@@ -81,7 +81,7 @@ export async function handleDeploy(params: DeployOptions): Promise<any> {
  */
 const deployTool: McpTool = {
   name: 'deploy',
-  description: 'Deploy web applications to AWS serverless infrastructure. Can also create and configure database resources like DynamoDB tables.',
+  description: 'Deploy web applications to AWS serverless infrastructure. Can also create and configure database resources like DynamoDB tables. WARNING: Changing deployment types can destroy existing resources and cause data loss. Safe changes: backend→fullstack, frontend→fullstack. Destructive changes: backend→frontend, frontend→backend, fullstack→backend, fullstack→frontend.',
   parameters: {
     deploymentType: z.enum(['backend', 'frontend', 'fullstack']).describe('Type of deployment'),
     projectName: z.string().describe('Project name'),
