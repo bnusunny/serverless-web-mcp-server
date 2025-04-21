@@ -103,7 +103,7 @@ export async function handleDeploymentDetails(params: any): Promise<any> {
  */
 const deploymentDetailsResource: McpResource = {
   name: 'deployment-details',
-  uri: new ResourceTemplate("deployment:{projectName}", { list: "deployment:list" }),
+  uri: new ResourceTemplate("deployment:{projectName}", { list: undefined }),
   description: 'Get details about a specific deployment',
   handler: async (uri: URL, variables?: any) => {
     return handleDeploymentDetails({ projectName: variables?.projectName });
