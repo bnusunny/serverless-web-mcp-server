@@ -219,8 +219,7 @@ async function buildAndDeployApplication(
 [default.deploy]
 [default.deploy.parameters]
 stack_name = "${stackName}"
-s3_bucket = "aws-sam-cli-managed-default-samclisourcebucket-${Math.random().toString(36).substring(2, 10)}"
-s3_prefix = "${stackName}"
+resolve_s3 = true
 region = "${configuration.region}"
 confirm_changeset = false
 capabilities = "CAPABILITY_IAM"
