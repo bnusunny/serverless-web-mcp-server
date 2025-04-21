@@ -1,100 +1,107 @@
 /**
  * Deployment Details Resource
  * 
- * Provides details about a specific deployment.
+ * Provides information about a specific deployment.
  */
 
 import { McpResource } from './index.js';
-import { ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
-import fs from 'fs';
-import path from 'path';
-import os from 'os';
+import { getDeploymentStatus } from '../../deployment/deploy-service.js';
 import { logger } from '../../utils/logger.js';
 
-// Define the directory where deployment status files are stored
-const DEPLOYMENT_STATUS_DIR = path.join(os.tmpdir(), 'serverless-web-mcp-deployments');
-
-// Ensure the directory exists
-if (!fs.existsSync(DEPLOYMENT_STATUS_DIR)) {
-  fs.mkdirSync(DEPLOYMENT_STATUS_DIR, { recursive: true });
-}
-
 /**
- * Deployment Details resource definition
+ * Handler for the deployment details resource
  */
-const deploymentDetails: McpResource = {
-  name: 'deployment-details',
-  uri: new ResourceTemplate("deployment:{projectName}", { list: undefined }),
-  description: 'Status and details of a specific deployment. Note: When redeploying, always use the SAME deployment type (fullstack, backend, or frontend) that was used for the initial deployment to avoid data loss.',
-  handler: async (uri, { projectName }, extra) => {
-    if (!projectName) {
+export async function handleDeploymentDetails(params: any): Promise<any> {
+  try {
+    const { projectName } = params;
+    logger.debug('Deployment details resource called', { projectName });
+    
+    // Get deployment status
+    const deployment = getDeploymentStatus(projectName);
+    
+    if (!deployment) {
       return {
-        contents: [{
-          uri: "deployment:unknown",
-          text: "Missing project name"
-        }],
-        metadata: {
-          error: "Missing project name"
-        }
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify({
+              error: `Deployment not found for project: ${projectName}`,
+              message: `No deployment information available for ${projectName}. Make sure you have initiated a deployment for this project.`
+            }, null, 2)
+          }
+        ]
       };
     }
     
-    // Check if deployment status file exists
-    const statusFilePath = path.join(DEPLOYMENT_STATUS_DIR, `${projectName}.json`);
+    // Format the response based on deployment status
+    let responseText = '';
     
-    if (fs.existsSync(statusFilePath)) {
-      try {
-        // Read deployment status from file
-        const statusData = fs.readFileSync(statusFilePath, 'utf8');
-        const deploymentDetails = JSON.parse(statusData);
-        
-        // Return in the format expected by MCP protocol
-        return {
-          contents: [{
-            uri: `deployment:${projectName}`,
-            text: statusData
-          }],
-          metadata: {
-            projectName
-          }
-        };
-      } catch (error) {
-        logger.error(`Error reading deployment status for ${projectName}:`, error);
-        return {
-          contents: [{
-            uri: `deployment:${projectName}`,
-            text: JSON.stringify({
-              projectName,
-              status: 'error',
-              message: `Error reading deployment status: ${error instanceof Error ? error.message : String(error)}`,
-              lastUpdated: new Date().toISOString()
-            })
-          }],
-          metadata: {
-            projectName,
-            error: `Error reading deployment status: ${error instanceof Error ? error.message : String(error)}`
-          }
-        };
-      }
+    if (deployment.status === 'COMPLETE') {
+      responseText = JSON.stringify({
+        projectName,
+        status: deployment.status,
+        success: deployment.success,
+        deploymentUrl: deployment.url,
+        resources: deployment.resources,
+        outputs: deployment.outputs,
+        stackName: deployment.stackName,
+        deploymentId: deployment.deploymentId
+      }, null, 2);
+    } else if (deployment.status === 'FAILED') {
+      responseText = JSON.stringify({
+        projectName,
+        status: deployment.status,
+        success: deployment.success,
+        error: deployment.error,
+        stackName: deployment.stackName,
+        deploymentId: deployment.deploymentId
+      }, null, 2);
+    } else {
+      // Deployment is still in progress
+      responseText = JSON.stringify({
+        projectName,
+        status: deployment.status,
+        message: `Deployment is currently in progress (${deployment.status}).`,
+        stackName: deployment.stackName,
+        deploymentId: deployment.deploymentId,
+        note: "Check this resource again in a few moments for updated status."
+      }, null, 2);
     }
     
-    // If no status file exists, return a placeholder response
     return {
-      contents: [{
-        uri: `deployment:${projectName}`,
-        text: JSON.stringify({
-          projectName,
-          status: 'unknown',
-          message: 'Deployment status not found',
-          lastUpdated: new Date().toISOString()
-        })
-      }],
-      metadata: {
-        projectName,
-        warning: 'Deployment status not found'
-      }
+      content: [
+        {
+          type: "text",
+          text: responseText
+        }
+      ]
     };
+  } catch (error: any) {
+    logger.error('Deployment details resource error', { error: error.message, stack: error.stack });
+    
+    return {
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify({
+            error: `Failed to get deployment details: ${error.message}`
+          }, null, 2)
+        }
+      ]
+    };
+  }
+}
+
+/**
+ * Deployment details resource definition
+ */
+const deploymentDetailsResource: McpResource = {
+  name: 'Deployment Details',
+  uri: 'deployment:{projectName}',
+  description: 'Get details about a specific deployment',
+  handler: async (uri: URL, variables?: any) => {
+    return handleDeploymentDetails({ projectName: variables?.projectName });
   }
 };
 
-export default deploymentDetails;
+export default deploymentDetailsResource;

@@ -1,209 +1,186 @@
-// test/unit/mcp/tools/deploy.test.ts
-jest.mock('fs', () => ({
-  existsSync: jest.fn(),
-  statSync: jest.fn()
-}));
+/**
+ * Test for Deploy Tool
+ */
+import { mockDeployApplication, mockLogger } from '../../../mock-utils';
 
-jest.mock('path', () => ({
-  join: jest.fn(),
-  resolve: jest.fn()
-}));
-
-// Mock the deploy service
+// Mock dependencies
 jest.mock('../../../../src/deployment/deploy-service', () => ({
-  deploy: jest.fn().mockResolvedValue({
-    status: 'success',
-    message: 'Deployment completed'
-  })
-}), { virtual: true });
+  deployApplication: mockDeployApplication
+}));
 
-// Import the module under test
-const fs = require('fs');
-const path = require('path');
-const deployService = require('../../../../src/deployment/deploy-service');
+jest.mock('../../../../src/utils/logger', () => ({
+  logger: mockLogger
+}));
 
-// Mock implementation of the module under test
-const mockHandleDeploy = jest.fn().mockImplementation(async (params) => {
-  // Validate required parameters
-  if (!params.deploymentType) {
-    throw new Error('deploymentType is required');
-  }
-  
-  if (!params.projectName) {
-    throw new Error('projectName is required');
-  }
-  
-  if (params.deploymentType === 'backend' || params.deploymentType === 'fullstack') {
-    if (!params.backendConfiguration) {
-      throw new Error('backendConfiguration is required for backend or fullstack deployments');
-    }
-    
-    if (!params.backendConfiguration.builtArtifactsPath) {
-      throw new Error('builtArtifactsPath is required in backendConfiguration');
-    }
-    
-    if (!params.backendConfiguration.runtime) {
-      throw new Error('runtime is required in backendConfiguration');
-    }
-    
-    // Check if startup script exists
-    const startupScriptPath = path.join(
-      params.backendConfiguration.builtArtifactsPath,
-      params.backendConfiguration.startupScript || 'bootstrap'
-    );
-    
-    if (!fs.existsSync(startupScriptPath)) {
-      throw new Error(`Startup script not found at ${startupScriptPath}`);
-    }
-  }
-  
-  if (params.deploymentType === 'frontend' || params.deploymentType === 'fullstack') {
-    if (!params.frontendConfiguration) {
-      throw new Error('frontendConfiguration is required for frontend or fullstack deployments');
-    }
-    
-    if (!params.frontendConfiguration.builtAssetsPath) {
-      throw new Error('builtAssetsPath is required in frontendConfiguration');
-    }
-    
-    // Check if assets directory exists
-    if (!fs.existsSync(params.frontendConfiguration.builtAssetsPath)) {
-      throw new Error(`Frontend assets directory not found at ${params.frontendConfiguration.builtAssetsPath}`);
-    }
-    
-    // Check if it's a directory
-    const stats = fs.statSync(params.frontendConfiguration.builtAssetsPath);
-    if (!stats.isDirectory || !stats.isDirectory()) {
-      throw new Error(`${params.frontendConfiguration.builtAssetsPath} is not a directory`);
-    }
-  }
-  
-  // Call the deploy service
-  return await deployService.deploy(params, (progress) => {
-    // Progress callback
-    console.log(progress);
-  });
-});
-
-// Mock the module
-jest.mock('../../../../src/mcp/tools/deploy', () => ({
-  handleDeploy: mockHandleDeploy
-}), { virtual: true });
+// Import the tool after mocking dependencies
+import deployTool from '../../../../src/mcp/tools/deploy';
 
 describe('Deploy Tool', () => {
   beforeEach(() => {
     jest.clearAllMocks();
   });
-
-  test('should validate required parameters', async () => {
+  
+  test('should have correct name and description', () => {
+    expect(deployTool.name).toBe('deploy');
+    expect(deployTool.description).toContain('Deploy web applications to AWS serverless infrastructure');
+  });
+  
+  test('should have projectRoot parameter with absolute path description', () => {
+    const projectRootParam = deployTool.parameters.projectRoot;
+    expect(projectRootParam).toBeDefined();
+    
+    // Check that the description mentions "absolute path"
+    const description = projectRootParam._def.description;
+    expect(description).toContain('Absolute path');
+    expect(description).toContain('Must be an absolute path');
+  });
+  
+  test('should have builtArtifactsPath parameter with relative path description', () => {
+    const backendConfig = deployTool.parameters.backendConfiguration;
+    const builtArtifactsPath = backendConfig._def.shape().builtArtifactsPath;
+    
+    expect(builtArtifactsPath).toBeDefined();
+    
+    // Check that the description mentions it can be relative to projectRoot
+    const description = builtArtifactsPath._def.description;
+    expect(description).toContain('Can be absolute or relative to projectRoot');
+  });
+  
+  test('should have builtAssetsPath parameter with relative path description', () => {
+    const frontendConfig = deployTool.parameters.frontendConfiguration;
+    const builtAssetsPath = frontendConfig._def.shape().builtAssetsPath;
+    
+    expect(builtAssetsPath).toBeDefined();
+    
+    // Check that the description mentions it can be relative to projectRoot
+    const description = builtAssetsPath._def.description;
+    expect(description).toContain('Can be absolute or relative to projectRoot');
+  });
+  
+  test('should call deployApplication with provided parameters', async () => {
     const params = {
       deploymentType: 'backend',
       projectName: 'test-project',
-      projectRoot: '/path/to/project',
+      projectRoot: '/absolute/path/to/project',
       region: 'us-east-1',
       backendConfiguration: {
-        builtArtifactsPath: '/path/to/artifacts',
-        runtime: 'nodejs18.x',
-        startupScript: 'bootstrap'
+        builtArtifactsPath: 'backend/dist',
+        runtime: 'nodejs18.x'
       }
     };
     
-    // Mock fs.existsSync and fs.statSync
-    fs.existsSync.mockReturnValue(true);
-    fs.statSync.mockReturnValue({ mode: 0o755 });
+    await deployTool.handler(params);
     
-    const result = await mockHandleDeploy(params);
-    expect(result.status).toBe('success');
-    expect(deployService.deploy).toHaveBeenCalledWith(
-      expect.objectContaining({
-        deploymentType: 'backend',
-        projectName: 'test-project'
-      }),
-      expect.any(Function)
-    );
+    expect(mockDeployApplication).toHaveBeenCalledWith(params);
   });
-
-  test('should throw error when startup script is missing', async () => {
+  
+  test('should return error if projectRoot is missing', async () => {
     const params = {
       deploymentType: 'backend',
       projectName: 'test-project',
-      projectRoot: '/path/to/project',
       region: 'us-east-1',
       backendConfiguration: {
-        builtArtifactsPath: '/path/to/artifacts',
-        runtime: 'nodejs18.x',
-        startupScript: 'bootstrap'
+        builtArtifactsPath: 'backend/dist',
+        runtime: 'nodejs18.x'
       }
     };
     
-    // Mock fs.existsSync to return false (file not found)
-    fs.existsSync.mockReturnValue(false);
+    // Remove projectRoot
+    const paramsWithoutRoot = { ...params, projectRoot: undefined };
     
-    await expect(mockHandleDeploy(params)).rejects.toThrow(/Startup script not found/);
-  });
-
-  test('should handle frontend deployment', async () => {
-    const params = {
-      deploymentType: 'frontend',
-      projectName: 'test-website',
-      projectRoot: '/path/to/project',
-      region: 'us-east-1',
-      frontendConfiguration: {
-        builtAssetsPath: '/path/to/assets',
-        indexDocument: 'index.html'
-      }
-    };
+    const result = await deployTool.handler(paramsWithoutRoot);
     
-    // Mock fs.existsSync and fs.statSync
-    fs.existsSync.mockReturnValue(true);
-    fs.statSync.mockImplementation(() => ({
-      isDirectory: () => true,
-      mode: 0o755
+    // Check that the response contains an error about missing projectRoot
+    expect(JSON.parse(result.content[0].text)).toEqual(expect.objectContaining({
+      success: false,
+      message: expect.stringContaining("Project root is required"),
+      error: expect.stringContaining("Missing required parameter: projectRoot")
     }));
     
-    const result = await mockHandleDeploy(params);
-    expect(result.status).toBe('success');
-    expect(deployService.deploy).toHaveBeenCalledWith(
-      expect.objectContaining({
-        deploymentType: 'frontend',
-        projectName: 'test-website'
-      }),
-      expect.any(Function)
-    );
+    // Verify deployApplication was not called
+    expect(mockDeployApplication).not.toHaveBeenCalled();
   });
-
-  test('should handle fullstack deployment', async () => {
+  
+  test('should return success response when deployment is initiated', async () => {
     const params = {
-      deploymentType: 'fullstack',
-      projectName: 'test-fullstack',
-      projectRoot: '/path/to/project',
+      deploymentType: 'backend',
+      projectName: 'test-project',
+      projectRoot: '/absolute/path/to/project',
       region: 'us-east-1',
       backendConfiguration: {
-        builtArtifactsPath: '/path/to/backend',
-        runtime: 'nodejs18.x',
-        startupScript: 'bootstrap'
-      },
-      frontendConfiguration: {
-        builtAssetsPath: '/path/to/frontend',
-        indexDocument: 'index.html'
+        builtArtifactsPath: 'backend/dist',
+        runtime: 'nodejs18.x'
       }
     };
     
-    // Mock fs.existsSync and fs.statSync
-    fs.existsSync.mockReturnValue(true);
-    fs.statSync.mockImplementation(() => ({
-      isDirectory: () => true,
-      mode: 0o755
-    }));
+    const result = await deployTool.handler(params);
+    const responseText = result.content[0].text;
+    const response = JSON.parse(responseText);
     
-    const result = await mockHandleDeploy(params);
-    expect(result.status).toBe('success');
-    expect(deployService.deploy).toHaveBeenCalledWith(
+    expect(response.success).toBe(true);
+    expect(response.message).toContain('initiated successfully');
+    expect(response.status).toBe('INITIATED');
+    expect(response.deploymentId).toBe('test-deployment-id');
+  });
+  
+  test('should handle deployment failure', async () => {
+    const params = {
+      deploymentType: 'backend',
+      projectName: 'test-project',
+      projectRoot: '/absolute/path/to/project',
+      region: 'us-east-1',
+      backendConfiguration: {
+        builtArtifactsPath: 'backend/dist',
+        runtime: 'nodejs18.x'
+      }
+    };
+    
+    // Mock deployApplication to return failure
+    mockDeployApplication.mockResolvedValueOnce({
+      success: false,
+      status: 'FAILED',
+      error: 'Test deployment failure'
+    });
+    
+    const result = await deployTool.handler(params);
+    const responseText = result.content[0].text;
+    const response = JSON.parse(responseText);
+    
+    expect(response.success).toBe(false);
+    expect(response.message).toContain('failed to initiate');
+    expect(response.error).toBe('Test deployment failure');
+    expect(response.status).toBe('FAILED');
+  });
+  
+  test('should handle exceptions during deployment', async () => {
+    const params = {
+      deploymentType: 'backend',
+      projectName: 'test-project',
+      projectRoot: '/absolute/path/to/project',
+      region: 'us-east-1',
+      backendConfiguration: {
+        builtArtifactsPath: 'backend/dist',
+        runtime: 'nodejs18.x'
+      }
+    };
+    
+    // Mock deployApplication to throw an error
+    mockDeployApplication.mockRejectedValueOnce(new Error('Unexpected error'));
+    
+    const result = await deployTool.handler(params);
+    const responseText = result.content[0].text;
+    const response = JSON.parse(responseText);
+    
+    expect(response.success).toBe(false);
+    expect(response.message).toContain('Deployment failed');
+    expect(response.error).toBe('Unexpected error');
+    
+    // Verify error was logged
+    expect(mockLogger.error).toHaveBeenCalledWith(
+      'Deploy tool error',
       expect.objectContaining({
-        deploymentType: 'fullstack',
-        projectName: 'test-fullstack'
-      }),
-      expect.any(Function)
+        error: 'Unexpected error'
+      })
     );
   });
 });

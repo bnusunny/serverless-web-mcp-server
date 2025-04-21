@@ -8,7 +8,7 @@
     "serverless-web-mcp": "build/index.js"
   },
   "scripts": {
-    "build": "esbuild src/index.ts --bundle --platform=node --target=node16 --format=cjs --outfile=build/index.js && chmod +x build/index.js",
+    "build": "tsc --noEmit && esbuild src/index.ts --bundle --platform=node --target=node16 --format=cjs --outfile=build/index.js && chmod +x build/index.js",
     "start": "node build/index.js",
     "dev": "NODE_OPTIONS=\"--loader ts-node/esm\" ts-node --project tsconfig.node.json src/index.ts",
     "dev:http": "NODE_OPTIONS=\"--loader ts-node/esm\" MCP_TRANSPORT=http ts-node --project tsconfig.node.json src/index.ts",
@@ -33,6 +33,11 @@
   ],
   "author": "AWS",
   "license": "MIT",
+  "files": [
+    "build",
+    "templates",
+    "README.md"
+  ],
   "dependencies": {
     "@aws-sdk/client-cloudformation": "^3.529.1",
     "@aws-sdk/client-cloudwatch-logs": "^3.529.1",
@@ -49,6 +54,7 @@
     "zod": "^3.24.3"
   },
   "devDependencies": {
+    "@aws-sdk/client-cloudfront": "^3.787.0",
     "@babel/core": "^7.26.10",
     "@babel/preset-env": "^7.26.9",
     "@babel/preset-typescript": "^7.27.0",

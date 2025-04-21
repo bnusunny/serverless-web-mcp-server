@@ -11,6 +11,7 @@ This document outlines the comprehensive testing strategy for the Serverless Web
 - [Test Fixtures and Mocks](#test-fixtures-and-mocks)
 - [Continuous Integration](#continuous-integration)
 - [Implementation Plan](#implementation-plan)
+- [Test Coverage Improvement Plan](#test-coverage-improvement-plan)
 
 ## Testing Directory Structure
 
@@ -556,6 +557,118 @@ Set coverage thresholds in `package.json`:
 6. **Keep Tests Fast**: Optimize tests to run quickly to encourage frequent testing
 7. **Maintain Test Coverage**: Aim for high test coverage, especially for critical components
 
+## Test Coverage Improvement Plan
+
+### 1. Summary of Current State
+
+After analyzing the current test coverage, we've identified several areas for improvement:
+
+- A well-structured test directory following best practices
+- Unit tests for most components
+- Integration tests for HTTP transport
+- Coverage thresholds set in Jest configuration
+
+However, there are several issues to address:
+
+1. **Failed Tests**: Many tests are failing due to:
+   - TypeScript type annotation issues in Jest
+   - Module import problems
+   - Mock implementation issues
+
+2. **Coverage Gaps**: Some areas have low coverage:
+   - Template rendering (47.79%)
+   - Deployment validation
+   - Dependency installation
+
+### 2. Immediate Fixes
+
+#### 2.1 Fix TypeScript Test Issues
+
+The main issue is with TypeScript type annotations in tests. We need to:
+
+1. Update Jest configuration to properly handle TypeScript:
+   - Add `ts-jest` transformer instead of `esbuild-jest`
+   - Configure proper handling of type annotations
+
+2. Fix module import paths:
+   - Update relative imports to use the correct paths
+   - Ensure mocks are properly set up
+
+#### 2.2 Fix Mock Implementation Issues
+
+Several tests fail because mocks aren't properly implemented:
+
+1. Update AWS mocks to use the correct AWS SDK v3 structure
+2. Fix process utility mocks
+3. Ensure Handlebars is properly mocked for template rendering
+
+### 3. New Tests to Add
+
+#### 3.1 Template Module Tests
+
+- Improve template registry tests
+- Add more comprehensive template rendering tests
+- Test template discovery with various configurations
+
+#### 3.2 Deployment Service Tests
+
+- Add tests for deployment validation
+- Improve dependency installation tests
+- Add tests for startup script generation
+- Test error handling scenarios
+
+#### 3.3 MCP Resource Tests
+
+- Complete deployment list resource tests
+- Add template list resource tests
+- Test resource error handling
+
+#### 3.4 Utility Tests
+
+- Expand file system utility tests
+- Add process utility tests
+- Improve logger tests
+
+### 4. Integration Tests
+
+- Add tests for the MCP server with HTTP transport
+- Test tool invocation through the MCP interface
+- Test resource retrieval through the MCP interface
+
+### 5. End-to-End Tests
+
+- Add tests for complete deployment workflows
+- Test backend deployment
+- Test frontend deployment
+- Test fullstack deployment
+
+### 6. Implementation Plan
+
+#### Phase 1: Fix Existing Tests
+
+1. Update Jest configuration to properly handle TypeScript
+2. Fix module import issues
+3. Update mock implementations
+
+#### Phase 2: Improve Unit Test Coverage
+
+1. Add missing tests for template module
+2. Add missing tests for deployment service
+3. Complete MCP resource tests
+4. Expand utility tests
+
+#### Phase 3: Add Integration and E2E Tests
+
+1. Implement integration tests for MCP server
+2. Add end-to-end tests for deployment workflows
+
+### 7. Recommendations for Test Infrastructure
+
+1. **Update Jest Configuration**: Switch to `ts-jest` for better TypeScript support
+2. **Improve Mock Helpers**: Enhance AWS and process mock helpers
+3. **Add Test Fixtures**: Create more comprehensive test fixtures
+4. **CI Integration**: Ensure tests run in CI pipeline
+
 ## Conclusion
 
-This testing strategy provides a comprehensive approach to ensuring the quality and reliability of the Serverless Web MCP Server. By implementing these testing practices, we can confidently make changes to the codebase, add new features, and fix bugs without introducing regressions.
+This testing strategy provides a comprehensive approach to ensuring the quality and reliability of the Serverless Web MCP Server. By implementing these testing practices and the test coverage improvement plan, we can confidently make changes to the codebase, add new features, and fix bugs without introducing regressions.

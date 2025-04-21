@@ -1,32 +1,27 @@
-// jest.config.cjs
 module.exports = {
+  preset: 'ts-jest',
   testEnvironment: 'node',
   roots: ['<rootDir>/test'],
-  testMatch: ['**/test/**/*.test.ts'],
   transform: {
-    '^.+\\.(ts|js)$': 'esbuild-jest'
+    '^.+\\.tsx?$': ['ts-jest', {
+      isolatedModules: true
+    }]
   },
-  moduleFileExtensions: ['ts', 'js', 'json'],
-  collectCoverage: true,
-  coverageDirectory: 'coverage',
-  coverageReporters: ['text', 'lcov'],
+  testRegex: '(/__tests__/.*|(\\.|/)(test|spec))\\.tsx?$',
+  moduleFileExtensions: ['ts', 'tsx', 'js', 'jsx', 'json', 'node'],
   moduleNameMapper: {
-    // Map source imports to the actual source files
-    '^@src/(.*)$': '<rootDir>/src/$1',
-    '^@test/(.*)$': '<rootDir>/test/$1'
+    '^src/(.*)$': '<rootDir>/src/$1',
+    '^test/(.*)$': '<rootDir>/test/$1'
   },
-  setupFilesAfterEnv: ['<rootDir>/test/helpers/setup.js'],
   collectCoverageFrom: [
-    "src/**/*.{ts,js}",
-    "!src/**/*.d.ts",
-    "!src/index.ts"
+    'src/**/*.{ts,tsx}',
+    '!src/**/*.d.ts'
   ],
-  coverageThreshold: {
-    global: {
-      branches: 0,
-      functions: 0,
-      lines: 0,
-      statements: 0
-    }
-  }
+  coverageDirectory: 'coverage',
+  testPathIgnorePatterns: [
+    '/node_modules/',
+    '/build/'
+  ],
+  setupFilesAfterEnv: ['<rootDir>/test/setup.ts'],
+  moduleDirectories: ['node_modules', '<rootDir>']
 };

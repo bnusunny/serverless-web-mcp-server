@@ -1,0 +1,11 @@
+{
+    "mcpServers": {
+        "use_sam": {
+            "command": "serverless-web-mcp",
+            "args": [
+                "--debug"
+            ],
+            "env": {}
+        }
+    }
+}

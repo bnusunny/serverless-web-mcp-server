@@ -11,7 +11,7 @@ import { McpResource } from './index.js';
  * @returns {Object} Deployment examples and templates
  */
 function handleDeploymentExamples() {
-  return {
+  const examples = {
     nodejs: {
       backend: {
         buildCommand: "npm run build",
@@ -39,7 +39,7 @@ require('./app.js');`,
         },
         packageJson: {
           "scripts": {
-            "build": "tsc && cp package.json dist/ && cd dist && npm install --production"
+            "build": "tsc && cp package.json dist/"
           }
         },
         deploymentConfig: {
@@ -49,7 +49,11 @@ require('./app.js');`,
           "backendConfiguration": {
             "builtArtifactsPath": "/path/to/project/dist",
             "runtime": "nodejs18.x",
-            "startupScript": "app.js",
+            "entryPoint": "app.js",
+            "generateStartupScript": true,
+            "environment": {
+              "NODE_ENV": "production"
+            },
             "databaseConfiguration": {
               "tableName": "Users",
               "attributeDefinitions": [
@@ -84,15 +88,15 @@ require('./app.js');`,
           "projectRoot": "/path/to/project",
           "frontendConfiguration": {
             "builtAssetsPath": "/path/to/project/build",
-            "indexDocument": "index.html"
+            "indexDocument": "index.html",
+            "errorDocument": "index.html"
           }
         }
       },
       fullstack: {
         preparationSteps: [
           "1. Build both backend and frontend",
-          "2. Ensure backend startup script is executable",
-          "3. Deploy with paths to both backend and frontend artifacts"
+          "2. Deploy with paths to both backend and frontend artifacts"
         ],
         deploymentConfig: {
           "deploymentType": "fullstack",
@@ -101,7 +105,11 @@ require('./app.js');`,
           "backendConfiguration": {
             "builtArtifactsPath": "/path/to/project/backend/dist",
             "runtime": "nodejs18.x",
-            "startupScript": "app.js",
+            "entryPoint": "app.js",
+            "generateStartupScript": true,
+            "environment": {
+              "NODE_ENV": "production"
+            },
             "databaseConfiguration": {
               "tableName": "Products",
               "attributeDefinitions": [
@@ -117,34 +125,33 @@ require('./app.js');`,
           },
           "frontendConfiguration": {
             "builtAssetsPath": "/path/to/project/frontend/build",
-            "indexDocument": "index.html"
+            "indexDocument": "index.html",
+            "errorDocument": "index.html"
           }
         }
       }
     },
     python: {
       backend: {
-        buildCommand: "pip install -r requirements.txt -t ./package",
-        typicalArtifactsPath: "./package",
-        startupScriptExample: `#!/usr/bin/env python3
-import app
-app.handler()`,
+        buildCommand: "pip install -r requirements.txt",
+        typicalArtifactsPath: "./app",
         preparationSteps: [
           "1. Create a requirements.txt file with your dependencies",
-          "2. Package your dependencies: pip install -r requirements.txt -t ./package",
-          "3. Copy your application code to the package directory: cp *.py ./package/",
-          "4. Create a startup script in your package folder",
-          "5. Make it executable: chmod +x package/app.py",
-          "6. Deploy with the correct paths"
+          "2. Create your application code",
+          "3. Deploy with the path to your application directory"
         ],
         deploymentConfig: {
           "deploymentType": "backend",
           "projectName": "python-api",
           "projectRoot": "/path/to/project",
           "backendConfiguration": {
-            "builtArtifactsPath": "/path/to/project/package",
+            "builtArtifactsPath": "/path/to/project/app",
             "runtime": "python3.9",
-            "startupScript": "app.py",
+            "entryPoint": "app.py",
+            "generateStartupScript": true,
+            "environment": {
+              "PYTHONPATH": "/var/task"
+            },
             "databaseConfiguration": {
               "tableName": "Tasks",
               "attributeDefinitions": [
@@ -161,17 +168,39 @@ app.handler()`,
         }
       }
     },
+    ruby: {
+      backend: {
+        buildCommand: "bundle install --path vendor/bundle",
+        typicalArtifactsPath: "./app",
+        preparationSteps: [
+          "1. Create a Gemfile with your dependencies",
+          "2. Run bundle install",
+          "3. Create your application code",
+          "4. Deploy with the path to your application directory"
+        ],
+        deploymentConfig: {
+          "deploymentType": "backend",
+          "projectName": "ruby-api",
+          "projectRoot": "/path/to/project",
+          "backendConfiguration": {
+            "builtArtifactsPath": "/path/to/project/app",
+            "runtime": "ruby2.7",
+            "entryPoint": "app.rb",
+            "generateStartupScript": true,
+            "environment": {
+              "RACK_ENV": "production"
+            }
+          }
+        }
+      }
+    },
     java: {
       backend: {
         buildCommand: "./gradlew build",
         typicalArtifactsPath: "./build/libs",
-        startupScriptExample: `#!/bin/bash
-java -jar app.jar`,
         preparationSteps: [
           "1. Build your application: ./gradlew build",
-          "2. Create a startup script in your build/libs folder",
-          "3. Make it executable: chmod +x build/libs/start.sh",
-          "4. Deploy with the correct paths"
+          "2. Deploy with the path to your built JAR file"
         ],
         deploymentConfig: {
           "deploymentType": "backend",
@@ -180,7 +209,10 @@ java -jar app.jar`,
           "backendConfiguration": {
             "builtArtifactsPath": "/path/to/project/build/libs",
             "runtime": "java11",
-            "startupScript": "start.sh"
+            "entryPoint": "app.jar",
+            "generateStartupScript": true,
+            "memorySize": 1024,
+            "timeout": 60
           }
         }
       }
@@ -232,29 +264,133 @@ java -jar app.jar`,
         }
       }
     },
+    frameworks: {
+      express: {
+        description: "Node.js Express framework",
+        entryPoint: "app.js",
+        sampleCode: `const express = require('express');
+const app = express();
+const port = process.env.PORT || 3000;
+
+app.use(express.json());
+
+app.get('/', (req, res) => {
+  res.json({ message: 'Hello from Express!' });
+});
+
+app.listen(port, () => {
+  console.log(\`Server running on port \${port}\`);
+});
+
+module.exports = app;`
+      },
+      flask: {
+        description: "Python Flask framework",
+        entryPoint: "app.py",
+        sampleCode: `from flask import Flask, jsonify
+
+app = Flask(__name__)
+
+@app.route('/')
+def hello():
+    return jsonify({"message": "Hello from Flask!"})
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))`
+      },
+      fastapi: {
+        description: "Python FastAPI framework",
+        entryPoint: "app.py",
+        sampleCode: `from fastapi import FastAPI
+import uvicorn
+
+app = FastAPI()
+
+@app.get("/")
+async def root():
+    return {"message": "Hello from FastAPI!"}
+
+if __name__ == "__main__":
+    uvicorn.run(app, host="0.0.0.0", port=int(os.environ.get("PORT", 8000)))`
+      },
+      react: {
+        description: "React frontend framework",
+        buildCommand: "npm run build",
+        sampleCode: `import React from 'react';
+import ReactDOM from 'react-dom';
+import './index.css';
+import App from './App';
+
+ReactDOM.render(
+  <React.StrictMode>
+    <App />
+  </React.StrictMode>,
+  document.getElementById('root')
+);`
+      }
+    },
     troubleshooting: {
       commonIssues: [
         {
-          issue: "Startup script not found",
-          solution: "Check that the path to your startup script is correct and that it exists in your built artifacts directory"
-        },
-        {
-          issue: "Startup script is not executable",
-          solution: "Run 'chmod +x' on your startup script to make it executable"
-        },
-        {
           issue: "Missing dependencies",
-          solution: "Ensure all dependencies are included in your built artifacts directory"
+          solution: "The server now automatically handles dependencies for backend deployments. You only need to provide your compiled code, and the deployment process will handle the rest."
         },
         {
-          issue: "Incorrect runtime",
-          solution: "Make sure the runtime you specified is compatible with your application"
+          issue: "Startup script issues",
+          solution: "Use the new generateStartupScript=true option with entryPoint to automatically generate a startup script based on your runtime and entry point."
         },
         {
           issue: "Deployment fails with no specific error",
-          solution: "Check CloudWatch logs for more details about the failure"
+          solution: "Check CloudWatch logs for more details about the failure. You can use the get-logs tool to retrieve logs."
+        },
+        {
+          issue: "CORS issues with API",
+          solution: "CORS is enabled by default. You can disable it by setting cors: false in your backendConfiguration."
+        },
+        {
+          issue: "Lambda timeout",
+          solution: "Increase the timeout value in your backendConfiguration (default is 30 seconds)."
         }
       ]
+    }
+  };
+
+  // Create content items for each example category
+  const contents = [
+    {
+      uri: "deployment:examples:nodejs",
+      text: JSON.stringify(examples.nodejs, null, 2)
+    },
+    {
+      uri: "deployment:examples:python",
+      text: JSON.stringify(examples.python, null, 2)
+    },
+    {
+      uri: "deployment:examples:ruby",
+      text: JSON.stringify(examples.ruby, null, 2)
+    },
+    {
+      uri: "deployment:examples:java",
+      text: JSON.stringify(examples.java, null, 2)
+    },
+    {
+      uri: "deployment:examples:database",
+      text: JSON.stringify(examples.database, null, 2)
+    },
+    {
+      uri: "deployment:examples:frameworks",
+      text: JSON.stringify(examples.frameworks, null, 2)
+    },
+    {
+      uri: "deployment:examples:troubleshooting",
+      text: JSON.stringify(examples.troubleshooting, null, 2)
+    }
+  ];
+
+  return {
+    contents: contents,
+    metadata: {
+      count: contents.length
     }
   };
 }

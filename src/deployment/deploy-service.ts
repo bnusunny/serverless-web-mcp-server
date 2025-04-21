@@ -280,7 +280,7 @@ async function buildAndDeployApplication(
   try {
     // Create samconfig.toml file
     const samConfigPath = path.join(projectRoot, 'samconfig.toml');
-    const samConfigContent = `
+    const samConfigContent = `version = 0.1
 [default]
 [default.deploy]
 [default.deploy.parameters]

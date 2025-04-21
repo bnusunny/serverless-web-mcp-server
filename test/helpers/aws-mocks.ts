@@ -1,7 +1,16 @@
-// test/helpers/aws-mocks.ts
+/**
+ * AWS Service Mocks
+ * 
+ * Provides utilities for mocking AWS services in tests
+ */
+
 import { mockClient } from 'aws-sdk-mock';
 import AWS from 'aws-sdk';
 
+/**
+ * Mock CloudFormation service
+ * @returns Mocked CloudFormation client
+ */
 export function mockCloudFormation() {
   mockClient(AWS.CloudFormation);
   
@@ -12,9 +21,31 @@ export function mockCloudFormation() {
           StackName: 'test-stack',
           StackStatus: 'CREATE_COMPLETE',
           Outputs: [
-            { OutputKey: 'ApiUrl', OutputValue: 'https://api.example.com' }
+            { OutputKey: 'ApiUrl', OutputValue: 'https://api.example.com' },
+            { OutputKey: 'FunctionName', OutputValue: 'test-function' }
           ]
         }]
+      })
+    };
+  });
+  
+  AWS.CloudFormation.prototype.listStacks = jest.fn().mockImplementation(() => {
+    return {
+      promise: () => Promise.resolve({
+        StackSummaries: [
+          {
+            StackName: 'test-api',
+            StackStatus: 'CREATE_COMPLETE',
+            CreationTime: new Date('2023-01-01T00:00:00Z'),
+            TemplateDescription: 'Test API Stack'
+          },
+          {
+            StackName: 'test-website',
+            StackStatus: 'CREATE_COMPLETE',
+            CreationTime: new Date('2023-01-02T00:00:00Z'),
+            TemplateDescription: 'Test Website Stack'
+          }
+        ]
       })
     };
   });
@@ -22,6 +53,10 @@ export function mockCloudFormation() {
   return AWS.CloudFormation;
 }
 
+/**
+ * Mock S3 service
+ * @returns Mocked S3 client
+ */
 export function mockS3() {
   mockClient(AWS.S3);
   
@@ -31,12 +66,18 @@ export function mockS3() {
     };
   });
   
+  AWS.S3.prototype.upload = jest.fn().mockImplementation(() => {
+    return {
+      promise: () => Promise.resolve({ Location: 'https://bucket.s3.amazonaws.com/key' })
+    };
+  });
+  
   AWS.S3.prototype.listObjectsV2 = jest.fn().mockImplementation(() => {
     return {
       promise: () => Promise.resolve({
         Contents: [
           { Key: 'index.html', Size: 1024, LastModified: new Date() },
-          { Key: 'assets/style.css', Size: 512, LastModified: new Date() }
+          { Key: 'assets/main.js', Size: 2048, LastModified: new Date() }
         ]
       })
     };
@@ -45,85 +86,31 @@ export function mockS3() {
   return AWS.S3;
 }
 
-export function mockApiGateway() {
-  mockClient(AWS.APIGateway);
+/**
+ * Mock CloudFront service
+ * @returns Mocked CloudFront client
+ */
+export function mockCloudFront() {
+  mockClient(AWS.CloudFront);
   
-  AWS.APIGateway.prototype.getRestApis = jest.fn().mockImplementation(() => {
+  AWS.CloudFront.prototype.createInvalidation = jest.fn().mockImplementation(() => {
     return {
       promise: () => Promise.resolve({
-        items: [
-          { id: 'api123', name: 'test-api' }
-        ]
-      })
-    };
-  });
-  
-  return AWS.APIGateway;
-}
-
-export function mockLambda() {
-  mockClient(AWS.Lambda);
-  
-  AWS.Lambda.prototype.listFunctions = jest.fn().mockImplementation(() => {
-    return {
-      promise: () => Promise.resolve({
-        Functions: [
-          { 
-            FunctionName: 'test-function',
-            Runtime: 'nodejs18.x',
-            MemorySize: 512,
-            Timeout: 30
-          }
-        ]
-      })
-    };
-  });
-  
-  return AWS.Lambda;
-}
-
-export function mockDynamoDB() {
-  mockClient(AWS.DynamoDB);
-  
-  AWS.DynamoDB.prototype.describeTable = jest.fn().mockImplementation(() => {
-    return {
-      promise: () => Promise.resolve({
-        Table: {
-          TableName: 'test-table',
-          TableStatus: 'ACTIVE',
-          KeySchema: [
-            { AttributeName: 'id', KeyType: 'HASH' }
-          ],
-          AttributeDefinitions: [
-            { AttributeName: 'id', AttributeType: 'S' }
-          ]
+        Invalidation: {
+          Id: 'mock-invalidation-id',
+          Status: 'InProgress'
         }
       })
     };
   });
   
-  return AWS.DynamoDB;
-}
-
-export function mockCloudFront() {
-  mockClient(AWS.CloudFront);
-  
-  AWS.CloudFront.prototype.listDistributions = jest.fn().mockImplementation(() => {
+  AWS.CloudFront.prototype.getDistribution = jest.fn().mockImplementation(() => {
     return {
       promise: () => Promise.resolve({
-        DistributionList: {
-          Items: [
-            {
-              Id: 'DIST123',
-              DomainName: 'abcdef123.cloudfront.net',
-              Status: 'Deployed',
-              Origins: {
-                Items: [
-                  { DomainName: 'test-bucket.s3.amazonaws.com' }
-                ]
-              }
-            }
-          ]
+        Distribution: {
+          Id: 'mock-distribution-id',
+          DomainName: 'd123456abcdef8.cloudfront.net',
+          Status: 'Deployed'
         }
       })
     };
@@ -132,6 +119,155 @@ export function mockCloudFront() {
   return AWS.CloudFront;
 }
 
+/**
+ * Mock DynamoDB service
+ * @returns Mocked DynamoDB client
+ */
+export function mockDynamoDB() {
+  mockClient(AWS.DynamoDB);
+  
+  AWS.DynamoDB.prototype.createTable = jest.fn().mockImplementation(() => {
+    return {
+      promise: () => Promise.resolve({
+        TableDescription: {
+          TableName: 'test-table',
+          TableStatus: 'CREATING'
+        }
+      })
+    };
+  });
+  
+  AWS.DynamoDB.prototype.describeTable = jest.fn().mockImplementation(() => {
+    return {
+      promise: () => Promise.resolve({
+        Table: {
+          TableName: 'test-table',
+          TableStatus: 'ACTIVE'
+        }
+      })
+    };
+  });
+  
+  return AWS.DynamoDB;
+}
+
+/**
+ * Mock Lambda service
+ * @returns Mocked Lambda client
+ */
+export function mockLambda() {
+  mockClient(AWS.Lambda);
+  
+  AWS.Lambda.prototype.getFunction = jest.fn().mockImplementation(() => {
+    return {
+      promise: () => Promise.resolve({
+        Configuration: {
+          FunctionName: 'test-function',
+          Runtime: 'nodejs18.x',
+          Handler: 'index.handler'
+        }
+      })
+    };
+  });
+  
+  AWS.Lambda.prototype.updateFunctionCode = jest.fn().mockImplementation(() => {
+    return {
+      promise: () => Promise.resolve({
+        FunctionName: 'test-function',
+        LastModified: new Date().toISOString()
+      })
+    };
+  });
+  
+  return AWS.Lambda;
+}
+
+/**
+ * Mock API Gateway service
+ * @returns Mocked API Gateway client
+ */
+export function mockAPIGateway() {
+  mockClient(AWS.APIGateway);
+  
+  AWS.APIGateway.prototype.getRestApis = jest.fn().mockImplementation(() => {
+    return {
+      promise: () => Promise.resolve({
+        items: [
+          {
+            id: 'api123',
+            name: 'test-api',
+            description: 'Test API'
+          }
+        ]
+      })
+    };
+  });
+  
+  return AWS.APIGateway;
+}
+
+/**
+ * Mock CloudWatch service
+ * @returns Mocked CloudWatch client
+ */
+export function mockCloudWatch() {
+  mockClient(AWS.CloudWatch);
+  
+  AWS.CloudWatch.prototype.getMetricData = jest.fn().mockImplementation(() => {
+    return {
+      promise: () => Promise.resolve({
+        MetricDataResults: [
+          {
+            Id: 'cpu',
+            Label: 'CPUUtilization',
+            Values: [1.0, 2.0, 3.0],
+            Timestamps: [
+              new Date('2023-01-01T00:00:00Z'),
+              new Date('2023-01-01T00:05:00Z'),
+              new Date('2023-01-01T00:10:00Z')
+            ]
+          }
+        ]
+      })
+    };
+  });
+  
+  return AWS.CloudWatch;
+}
+
+/**
+ * Mock CloudWatch Logs service
+ * @returns Mocked CloudWatch Logs client
+ */
+export function mockCloudWatchLogs() {
+  mockClient(AWS.CloudWatchLogs);
+  
+  AWS.CloudWatchLogs.prototype.filterLogEvents = jest.fn().mockImplementation(() => {
+    return {
+      promise: () => Promise.resolve({
+        events: [
+          {
+            message: 'INFO: Application started',
+            timestamp: Date.now() - 60000,
+            logStreamName: 'stream1'
+          },
+          {
+            message: 'ERROR: Something went wrong',
+            timestamp: Date.now() - 30000,
+            logStreamName: 'stream1'
+          }
+        ]
+      })
+    };
+  });
+  
+  return AWS.CloudWatchLogs;
+}
+
+/**
+ * Mock ACM service
+ * @returns Mocked ACM client
+ */
 export function mockACM() {
   mockClient(AWS.ACM);
   
@@ -151,6 +287,10 @@ export function mockACM() {
   return AWS.ACM;
 }
 
+/**
+ * Mock Route53 service
+ * @returns Mocked Route53 client
+ */
 export function mockRoute53() {
   mockClient(AWS.Route53);
   
@@ -159,9 +299,8 @@ export function mockRoute53() {
       promise: () => Promise.resolve({
         HostedZones: [
           {
-            Id: '/hostedzone/Z123456789',
-            Name: 'example.com.',
-            CallerReference: '1234'
+            Id: '/hostedzone/Z123456789ABCDEFGHIJK',
+            Name: 'example.com.'
           }
         ]
       })
@@ -169,4 +308,20 @@ export function mockRoute53() {
   });
   
   return AWS.Route53;
+}
+
+/**
+ * Setup all AWS mocks
+ */
+export function setupAllAWSMocks() {
+  mockCloudFormation();
+  mockS3();
+  mockCloudFront();
+  mockDynamoDB();
+  mockLambda();
+  mockAPIGateway();
+  mockCloudWatch();
+  mockCloudWatchLogs();
+  mockACM();
+  mockRoute53();
 }

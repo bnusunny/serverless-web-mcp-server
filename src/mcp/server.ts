@@ -1,15 +1,11 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
-import { toolDefinitions } from "./tools/index.js";
+import tools, { McpTool } from "./tools/index.js";
 import resources, { McpResource } from "./resources/index.js";
-import express from "express";
-import cors from "cors";
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import { logger } from "../utils/logger.js";
-import { z } from 'zod';
 
 // Define the directory where deployment status files will be stored
 const DEPLOYMENT_STATUS_DIR = path.join(os.tmpdir(), 'serverless-web-mcp-deployments');
@@ -31,19 +27,54 @@ export function createMcpServer(): McpServer {
     description: "Serverless Web MCP Server for deploying web applications to AWS serverless infrastructure"
   });
 
-  // Register tools with their proper Zod schemas
-  toolDefinitions.forEach((tool) => {
-    server.tool(tool.name, tool.description, tool.parameters.shape, tool.handler);
+  // Register tools
+  tools.forEach((tool: McpTool) => {
+    const originalHandler = tool.handler;
+    
+    // Wrap the tool handler with logging
+    const wrappedHandler = async (params: any) => {
+      logger.debug(`[TOOL INVOKED] ${tool.name}`, { params });
+      try {
+        const result = await originalHandler(params);
+        logger.debug(`[TOOL RESULT] ${tool.name}`, { result });
+        return result;
+      } catch (error) {
+        logger.error(`[TOOL ERROR] ${tool.name}`, { error });
+        throw error;
+      }
+    };
+    
+    server.tool(
+      tool.name, 
+      tool.description, 
+      tool.parameters, 
+      wrappedHandler
+    );
   });
 
   // Register resources
   resources.forEach((resource: McpResource) => {
+    const originalHandler = resource.handler;
+    
+    // Wrap the resource handler with logging
+    const wrappedHandler = async (params: any) => {
+      logger.debug(`[RESOURCE ACCESSED] ${resource.name}`, { params });
+      try {
+        const result = await originalHandler(params);
+        logger.debug(`[RESOURCE RESULT] ${resource.name}`, { result });
+        return result;
+      } catch (error) {
+        logger.error(`[RESOURCE ERROR] ${resource.name}`, { error });
+        throw error;
+      }
+    };
+    
     if (typeof resource.uri === 'string') {
       // Static resource with a fixed URI
-      server.resource(resource.name, resource.uri, resource.handler);
+      server.resource(resource.name, resource.uri, wrappedHandler);
     } else {
       // Dynamic resource with a template URI
-      server.resource(resource.name, resource.uri, resource.handler);
+      server.resource(resource.name, resource.uri, wrappedHandler);
     }
   });
 
@@ -52,251 +83,19 @@ export function createMcpServer(): McpServer {
 
 /**
  * Starts the MCP server with stdio transport
- * @param server The MCP server instance
  */
-export async function startStdioServer(server: McpServer): Promise<void> {
-  logger.info("Serverless Web MCP Server started in stdio mode");
+export async function startStdioServer(): Promise<void> {
+  const server = createMcpServer();
+  const transport = new StdioServerTransport();
+  
+  logger.info("Starting MCP server with stdio transport");
+  logger.info(`Log file location: ${(logger as any).getLogFilePath()}`);
   
   try {
-    // Create the StdioServerTransport
-    const stdioTransport = new StdioServerTransport();
-    
-    // Add debug logging for messages
-    const originalSend = stdioTransport.send;
-    stdioTransport.send = async function(message: any) {
-      logger.debug(`[MCP OUTGOING] ${JSON.stringify(message)}`, { messageType: 'outgoing' });
-      
-      // Special handling for needs_input responses to ensure they're properly sent
-      if (message.result && message.result.status === 'needs_input') {
-        logger.info(`Sending needs_input response with inputKey: ${message.result.inputKey}`, { 
-          responseType: 'needs_input',
-          inputKey: message.result.inputKey
-        });
-      }
-      
-      return originalSend.call(this, message);
-    };
-    
-    // Connect the server to the transport
-    // Note: connect() automatically starts the transport
-    await server.connect(stdioTransport);
-    
-    logger.info("Server connected to transport and ready to receive requests");
-    
-    // Handle process termination
-    process.on('SIGINT', async () => {
-      logger.info("Received SIGINT. Exiting.");
-      await server.close();
-      process.exit(0);
-    });
-    
-    process.on('SIGTERM', async () => {
-      logger.info("Received SIGTERM. Exiting.");
-      await server.close();
-      process.exit(0);
-    });
+    await server.connect(transport);
+    logger.info("MCP server connected to stdio transport");
   } catch (error) {
-    logger.error("Error setting up server:", error);
+    logger.error("Error connecting MCP server to stdio transport:", error);
     process.exit(1);
-  }
-}
-
-/**
- * Starts the MCP server with HTTP transport
- * @param server The MCP server instance
- * @param port The port to listen on
- */
-export async function startHttpServer(server: McpServer, port: number): Promise<void> {
-  // HTTP transport with SSE
-  const app = express();
-  
-  // Enable CORS
-  app.use(cors({
-    origin: '*',
-    methods: ['GET', 'POST', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization']
-  }));
-  
-  // Parse JSON bodies
-  app.use(express.json({
-    limit: '4mb'
-  }));
-  
-  // Parse URL-encoded bodies
-  app.use(express.urlencoded({
-    extended: true,
-    limit: '4mb'
-  }));
-  
-  // Store active SSE transports by session ID
-  const transports: { [sessionId: string]: SSEServerTransport } = {};
-  
-  // SSE endpoint for establishing connection
-  app.get("/sse", async (req, res) => {
-    logger.info("New SSE connection established");
-    
-    // Set headers for SSE
-    res.setHeader('Content-Type', 'text/event-stream');
-    res.setHeader('Cache-Control', 'no-cache, no-transform');
-    res.setHeader('Connection', 'keep-alive');
-    
-    // Create a new SSE transport
-    const transport = new SSEServerTransport('/messages', res);
-    const sessionId = transport.sessionId;
-    
-    logger.debug(`Created new SSE transport with session ID: ${sessionId}`);
-    
-    // Add debug logging for messages
-    const originalSend = transport.send;
-    transport.send = async function(message: any) {
-      logger.debug(`[MCP OUTGOING][${sessionId}]`, { 
-        messageType: 'outgoing',
-        sessionId,
-        message
-      });
-      
-      // Special handling for needs_input responses to ensure they're properly sent
-      if (message.result && message.result.status === 'needs_input') {
-        logger.info(`Sending needs_input response with inputKey: ${message.result.inputKey}`, { 
-          responseType: 'needs_input',
-          inputKey: message.result.inputKey,
-          sessionId
-        });
-      }
-      
-      return originalSend.call(this, message);
-    };
-    
-    // Add debug logging for handlePostMessage
-    const originalHandlePostMessage = transport.handlePostMessage;
-    transport.handlePostMessage = async function(req, res, parsedBody) {
-      logger.debug(`[MCP INCOMING][${sessionId}] ${JSON.stringify(parsedBody)}`);
-      return originalHandlePostMessage.call(this, req, res, parsedBody);
-    };
-    
-    // Store the transport
-    transports[sessionId] = transport;
-    
-    // Log all active transports
-    logger.debug(`Active transports: ${Object.keys(transports).join(', ')}`);
-    
-    // Clean up when the connection closes
-    res.on("close", () => {
-      logger.info(`SSE connection closed for session ${sessionId}`);
-      delete transports[sessionId];
-    });
-    
-    // Connect the server to the transport
-    try {
-      // Connect the server to the transport (this will call transport.start() internally)
-      await server.connect(transport);
-      
-      logger.info(`Server connected to transport for session ${sessionId}`);
-      
-    } catch (error) {
-      logger.error("Error connecting server to transport:", error);
-      res.status(500).end();
-    }
-  });
-  
-  // Message endpoint for receiving client messages
-  app.post("/messages", async (req, res) => {
-    const sessionId = req.query.sessionId as string;
-    
-    logger.debug(`Received message for session ID: ${sessionId}`);
-    logger.debug(`Available transports: ${Object.keys(transports).join(', ')}`);
-    
-    if (!sessionId) {
-      logger.error("No sessionId provided in request");
-      return res.status(400).json({ error: "No sessionId provided" });
-    }
-    
-    const transport = transports[sessionId];
-    
-    if (!transport) {
-      logger.error(`No transport found for sessionId: ${sessionId}`);
-      return res.status(400).json({ error: "Invalid sessionId" });
-    }
-    
-    logger.debug(`Found transport for session ID: ${sessionId}`);
-    
-    try {
-      if (process.env.DEBUG) {
-        logger.debug(`Received request for session ${sessionId}:`, req.body);
-        logger.debug(`Request headers:`, req.headers);
-      }
-      
-      // Ensure we have a valid request body
-      if (!req.body) {
-        return res.status(400).json({ 
-          jsonrpc: "2.0",
-          id: null,
-          error: {
-            code: -32700,
-            message: "Missing request body"
-          }
-        });
-      }
-      
-      // Pass the parsed body directly to handlePostMessage
-      await transport.handlePostMessage(req, res, req.body);
-      
-      if (process.env.DEBUG) {
-        logger.debug(`Handled request for session ${sessionId}`);
-      }
-    } catch (error) {
-      logger.error("Error handling message:", error);
-      res.status(500).json({ 
-        jsonrpc: "2.0",
-        id: req.body?.id || null,
-        error: {
-          code: -32000,
-          message: error instanceof Error ? error.message : "Internal server error"
-        }
-      });
-    }
-  });
-  
-  // Add a health check endpoint
-  app.get("/health", (req, res) => {
-    res.status(200).json({ status: "ok" });
-  });
-  
-  // Add an endpoint to get the log file path
-  app.get("/logs", (req, res) => {
-    res.status(200).json({ 
-      logFile: (logger as any).getLogFilePath(),
-      message: "Use this path to view the server logs"
-    });
-  });
-  
-  return new Promise((resolve) => {
-    app.listen(port, () => {
-      logger.info(`Serverless Web MCP Server listening on port ${port}`);
-      logger.info(`MCP SSE endpoint: http://localhost:${port}/sse`);
-      logger.info(`MCP message endpoint: http://localhost:${port}/messages`);
-      logger.info(`Health check: http://localhost:${port}/health`);
-      logger.info(`Logs endpoint: http://localhost:${port}/logs`);
-      logger.info(`Server is ready to accept requests`);
-      resolve();
-    });
-  });
-}
-
-/**
- * Start the MCP server with the appropriate transport
- */
-export async function startServer(): Promise<void> {
-  // Create the MCP server
-  const server = createMcpServer();
-  
-  // Determine which transport to use
-  const transport = process.env.MCP_TRANSPORT || 'stdio';
-  
-  if (transport === 'http') {
-    const port = parseInt(process.env.PORT || '3000', 10);
-    await startHttpServer(server, port);
-  } else {
-    await startStdioServer(server);
   }
 }

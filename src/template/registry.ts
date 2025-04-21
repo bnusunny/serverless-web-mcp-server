@@ -1,7 +1,6 @@
 // Renamed from template-registry.ts
 import fs from 'fs/promises';
 import path from 'path';
-import { Config } from '../config.js';
 import { logger } from '../utils/logger.js';
 
 /**
@@ -25,10 +24,75 @@ export interface Template {
 }
 
 /**
+ * Get the templates directory path
+ * Priority:
+ * 1. TEMPLATES_PATH environment variable
+ * 2. config.templates.path from config.json
+ * 3. Default paths based on installation method
+ */
+function getTemplatesPath(): string {
+  // Check environment variable first
+  if (process.env.TEMPLATES_PATH) {
+    logger.debug(`Using templates path from environment: ${process.env.TEMPLATES_PATH}`);
+    return process.env.TEMPLATES_PATH;
+  }
+  
+  // Try to find templates in standard locations
+  // The order is important - we want to prioritize the templates that come with the package
+  const possiblePaths = [
+    // 1. When running from source (development mode)
+    path.resolve(__dirname, '..', '..', 'templates'),
+    
+    // 2. When installed as a local dependency (most common for projects)
+    path.resolve(process.cwd(), 'node_modules', 'serverless-web-mcp-server', 'templates'),
+    
+    // 3. When installed globally
+    path.join(process.execPath, '..', '..', 'lib', 'node_modules', 'serverless-web-mcp-server', 'templates'),
+    
+    // 4. Try another common global installation path
+    '/usr/lib/node_modules/serverless-web-mcp-server/templates',
+    
+    // 5. Check if there's a templates directory in the current working directory (least preferred)
+    path.resolve(process.cwd(), 'templates')
+  ];
+  
+  logger.debug(`Searching for templates in possible paths: ${possiblePaths.join(', ')}`);
+  
+  for (const possiblePath of possiblePaths) {
+    try {
+      // Use synchronous check here since this is initialization code
+      if (require('fs').existsSync(possiblePath)) {
+        // Check if the directory actually contains template files
+        const files = require('fs').readdirSync(possiblePath);
+        const hasTemplates = files.some((file: string) => 
+          file.endsWith('.hbs') || file.endsWith('.yaml') || file.endsWith('.yml')
+        );
+        
+        if (hasTemplates) {
+          logger.debug(`Found templates at: ${possiblePath}`);
+          return possiblePath;
+        } else {
+          logger.debug(`Directory exists but contains no templates: ${possiblePath}`);
+        }
+      }
+    } catch (error) {
+      // Ignore errors and try next path
+      logger.debug(`Error checking path ${possiblePath}: ${error}`);
+    }
+  }
+  
+  // Default to templates in current directory as last resort
+  const defaultPath = path.resolve(process.cwd(), 'templates');
+  logger.warn(`Could not find templates directory, using current directory: ${defaultPath}`);
+  return defaultPath;
+}
+
+/**
  * Get the appropriate template for a deployment
  */
 export async function getTemplateForDeployment(deploymentType: DeploymentTypes, framework?: string): Promise<Template> {
-  const templatesPath = process.env.TEMPLATES_PATH || path.join(process.cwd(), 'templates');
+  const templatesPath = getTemplatesPath();
+  logger.debug(`Looking for template with deployment type: ${deploymentType}, framework: ${framework || 'none'}`);
   
   // Define the search order based on the documentation
   const searchPaths = [
@@ -42,11 +106,10 @@ export async function getTemplateForDeployment(deploymentType: DeploymentTypes, 
     
     // 3. Generic template for this deployment type
     path.join(templatesPath, `${deploymentType}.hbs`),
-    path.join(templatesPath, `${deploymentType}.yaml`),
-    
-    // 4. Special case for backend - always use backend-api.yaml
-    deploymentType === DeploymentTypes.BACKEND ? path.join(templatesPath, 'backend-api.yaml') : null
+    path.join(templatesPath, `${deploymentType}.yaml`)
   ].filter(Boolean) as string[];
+  
+  logger.debug(`Search paths: ${searchPaths.join(', ')}`);
   
   // Try each path in order
   for (const templatePath of searchPaths) {
@@ -62,7 +125,7 @@ export async function getTemplateForDeployment(deploymentType: DeploymentTypes, 
       };
     } catch (error) {
       // Template doesn't exist, try the next one
-      continue;
+      logger.debug(`Template not found at ${templatePath}`);
     }
   }
   
@@ -76,11 +139,14 @@ export async function getTemplateForDeployment(deploymentType: DeploymentTypes, 
  * Discover all available templates
  */
 export async function discoverTemplates(): Promise<Template[]> {
-  const templatesPath = process.env.TEMPLATES_PATH || path.join(process.cwd(), 'templates');
+  const templatesPath = getTemplatesPath();
+  logger.debug(`Discovering templates in ${templatesPath}`);
   
   try {
     const files = await fs.readdir(templatesPath);
     const templates: Template[] = [];
+    
+    logger.debug(`Found ${files.length} files in templates directory`);
     
     for (const file of files) {
       const ext = path.extname(file);
@@ -89,7 +155,10 @@ export async function discoverTemplates(): Promise<Template[]> {
         const parts = name.split('-');
         
         // Skip files that don't match our naming convention
-        if (parts.length === 0) continue;
+        if (parts.length === 0) {
+          logger.debug(`Skipping file ${file} - doesn't match naming convention`);
+          continue;
+        }
         
         // Try to determine the deployment type
         let type: DeploymentTypes;
@@ -99,6 +168,7 @@ export async function discoverTemplates(): Promise<Template[]> {
           type = typeStr as DeploymentTypes;
         } else {
           // Skip files that don't start with a valid deployment type
+          logger.debug(`Skipping file ${file} - invalid deployment type: ${typeStr}`);
           continue;
         }
         
@@ -114,13 +184,15 @@ export async function discoverTemplates(): Promise<Template[]> {
           type,
           framework
         });
+        
+        logger.debug(`Added template: ${name}, type: ${type}, framework: ${framework || 'none'}`);
       }
     }
     
-    logger.debug(`Discovered ${templates.length} templates`);
+    logger.debug(`Discovered ${templates.length} templates in ${templatesPath}`);
     return templates;
   } catch (error) {
-    logger.error(`Error discovering templates: ${error}`);
+    logger.error(`Error discovering templates in ${templatesPath}: ${error}`);
     throw new Error(`Failed to discover templates: ${error}`);
   }
 }

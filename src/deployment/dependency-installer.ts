@@ -43,7 +43,7 @@ export async function installDependencies(
     } else {
       logger.warn(`Unsupported runtime: ${runtime}, dependencies may need to be installed manually`);
     }
-  } catch (error) {
+  } catch (error: any) {
     logger.error(`Error installing dependencies: ${error.message}`);
     throw new Error(`Failed to install dependencies: ${error.message}`);
   }

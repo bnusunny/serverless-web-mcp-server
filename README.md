@@ -21,6 +21,25 @@ The server now automatically handles dependencies for backend deployments:
 
 This means you no longer need to include dependencies in your build artifacts - just provide your compiled code and the deployment process will handle the rest.
 
+## Path Resolution
+
+When specifying paths in deployment parameters:
+
+- `projectRoot` must be an absolute path (e.g., `/home/user/projects/myapp`)
+- `builtArtifactsPath` and `builtAssetsPath` can be:
+  - Absolute paths
+  - Relative paths that will be resolved against the `projectRoot`
+
+Example:
+```json
+{
+  "projectRoot": "/home/user/projects/myapp",
+  "backendConfiguration": {
+    "builtArtifactsPath": "backend/dist"  // Resolves to /home/user/projects/myapp/backend/dist
+  }
+}
+```
+
 ## MCP Implementation
 
 This server implements the Model Context Protocol with the following features:
@@ -214,7 +233,7 @@ This will return a list of all available tools with their descriptions and param
       "projectRoot": "/path/to/project",
       "region": "us-east-1",
       "backendConfiguration": {
-        "builtArtifactsPath": "/path/to/built/artifacts",
+        "builtArtifactsPath": "backend/dist",
         "runtime": "nodejs18.x",
         "startupScript": "bootstrap",
         "memorySize": 512,
@@ -252,7 +271,7 @@ This will return a list of all available tools with their descriptions and param
   "projectRoot": "/path/to/project",
   "region": "us-east-1",
   "backendConfiguration": {
-    "builtArtifactsPath": "/path/to/built/artifacts",
+    "builtArtifactsPath": "backend/dist",
     "runtime": "nodejs18.x",
     "startupScript": "bootstrap",
     "memorySize": 512,
@@ -282,7 +301,7 @@ This will return a list of all available tools with their descriptions and param
   "projectRoot": "/path/to/project",
   "region": "us-east-1",
   "frontendConfiguration": {
-    "builtAssetsPath": "/path/to/built/assets",
+    "builtAssetsPath": "frontend/build",
     "indexDocument": "index.html",
     "customDomain": "example.com",
     "certificateArn": "arn:aws:acm:us-east-1:123456789012:certificate/abcdef12-3456-7890-abcd-ef1234567890"
@@ -299,14 +318,14 @@ This will return a list of all available tools with their descriptions and param
   "projectRoot": "/path/to/project",
   "region": "us-east-1",
   "backendConfiguration": {
-    "builtArtifactsPath": "/path/to/backend/artifacts",
+    "builtArtifactsPath": "backend/dist",
     "runtime": "nodejs18.x",
     "environment": {
       "NODE_ENV": "production"
     }
   },
   "frontendConfiguration": {
-    "builtAssetsPath": "/path/to/frontend/assets",
+    "builtAssetsPath": "frontend/build",
     "indexDocument": "index.html"
   }
 }

@@ -53,7 +53,18 @@ export interface DeployToolParams {
      * The script must be executable in the Lambda (Linux) environment
      * For shell scripts, include a shebang line (e.g., #!/bin/sh)
      */
-    startupScript: string;
+    startupScript?: string;
+    
+    /**
+     * Application entry point file
+     * Used with generateStartupScript to automatically create a startup script
+     */
+    entryPoint?: string;
+    
+    /**
+     * Whether to automatically generate a startup script
+     */
+    generateStartupScript?: boolean;
     
     /**
      * Lambda architecture
@@ -186,22 +197,50 @@ export interface DeployToolParams {
   };
 }
 
+// Backend deployment options
+export interface BackendDeployOptions {
+  deploymentType: 'backend';
+  projectName: string;
+  projectRoot: string;
+  region?: string;
+  backendConfiguration: DeployToolParams['backendConfiguration'];
+}
+
+// Frontend deployment options
+export interface FrontendDeployOptions {
+  deploymentType: 'frontend';
+  projectName: string;
+  projectRoot: string;
+  region?: string;
+  frontendConfiguration: DeployToolParams['frontendConfiguration'];
+}
+
+// Fullstack deployment options
+export interface FullstackDeployOptions {
+  deploymentType: 'fullstack';
+  projectName: string;
+  projectRoot: string;
+  region?: string;
+  backendConfiguration: DeployToolParams['backendConfiguration'];
+  frontendConfiguration: DeployToolParams['frontendConfiguration'];
+}
+
 // Deploy options for the deployment service
 export interface DeployOptions {
   deploymentType: 'backend' | 'frontend' | 'fullstack';
   projectName: string;
   projectRoot: string;
   region?: string;
-  backendConfiguration?: any;
-  frontendConfiguration?: any;
+  backendConfiguration?: DeployToolParams['backendConfiguration'];
+  frontendConfiguration?: DeployToolParams['frontendConfiguration'];
 }
 
 // Deployment configuration
 export interface DeploymentConfiguration {
   projectName: string;
   region: string;
-  backendConfiguration?: any;
-  frontendConfiguration?: any;
+  backendConfiguration?: DeployToolParams['backendConfiguration'];
+  frontendConfiguration?: DeployToolParams['frontendConfiguration'];
 }
 
 // Deploy result from the deployment service

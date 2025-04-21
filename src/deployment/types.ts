@@ -79,35 +79,6 @@ export interface FullstackDeployOptions extends DeployOptions {
 }
 
 /**
- * Validation error interface
- */
-export interface ValidationError {
-  code: string;
-  message: string;
-  path: string;
-  suggestion?: string;
-}
-
-/**
- * Validation warning interface
- */
-export interface ValidationWarning {
-  code: string;
-  message: string;
-  path: string;
-  suggestion?: string;
-}
-
-/**
- * Validation result interface
- */
-export interface ValidationResult {
-  valid: boolean;
-  errors: ValidationError[];
-  warnings: ValidationWarning[];
-}
-
-/**
  * Base deployment result interface
  */
 export interface DeploymentResult {
@@ -116,7 +87,6 @@ export interface DeploymentResult {
   error?: string;
   stackTrace?: string;
   phase?: string;
-  validationResult?: ValidationResult;
   [key: string]: any;
 }
 
