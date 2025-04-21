@@ -81,7 +81,7 @@ export async function handleDeploy(params: DeployOptions): Promise<any> {
  */
 const deployTool: McpTool = {
   name: 'deploy',
-  description: 'Deploy web applications to AWS serverless infrastructure, including database resources like DynamoDB tables. You need to build the backend and frontend before using this tool to deploy. For backend, please install all dependencies in the builtArtifactsPath. WARNING: Choose deployment types carefully. Changing deployment types can destroy existing resources and cause data loss. Safe changes: backend→fullstack, frontend→fullstack. Destructive changes: backend→frontend, frontend→backend, fullstack→backend, fullstack→frontend.',
+  description: 'Deploy web applications to AWS serverless infrastructure, including database resources like DynamoDB tables. IMPORTANT FOR DEPENDENCIES: For Node.js, copy package.json to builtArtifactsPath and run \'npm install --omit-dev\' there. For Python, include requirements.txt and run \'pip install -r requirements.txt -t .\' in builtArtifactsPath. WARNING: Choose deployment types carefully. Changing deployment types can destroy existing resources and cause data loss. Safe changes: backend→fullstack, frontend→fullstack. Destructive changes: backend→frontend, frontend→backend, fullstack→backend, fullstack→frontend.',
   parameters: {
     deploymentType: z.enum(['backend', 'frontend', 'fullstack']).describe('Type of deployment'),
     projectName: z.string().describe('Project name'),
