@@ -28,6 +28,9 @@ import { uploadFrontendAssets } from './frontend-upload.js';
 // Get directory path for CommonJS
 const __dirname = path.resolve();
 
+// In-memory store for deployment status
+const deploymentStore: Record<string, any> = {};
+
 const execAsync = promisify(exec);
 const writeFileAsync = promisify(fs.writeFile);
 const readFileAsync = promisify(fs.readFile);
@@ -46,7 +49,7 @@ if (!fs.existsSync(DEPLOYMENT_STATUS_DIR)) {
  * @param options - Deployment options
  * @returns - Deployment result
  */
-export async function deploy(options: DeployOptions): Promise<DeployResult> {
+export async function deployApplication(options: DeployOptions): Promise<DeployResult> {
   const { deploymentType, projectName } = options;
   
   // Convert relative project root to absolute path
@@ -55,6 +58,16 @@ export async function deploy(options: DeployOptions): Promise<DeployResult> {
     : path.resolve(process.cwd(), options.projectRoot);
   
   logger.info(`[DEPLOY START] Starting deployment process for ${projectName}`);
+  
+  // Update deployment status in store
+  deploymentStore[projectName] = {
+    projectName,
+    status: DeploymentStatus.IN_PROGRESS,
+    success: false,
+    stackName: `${projectName}-${Date.now().toString().slice(-6)}`,
+    deploymentId: `${projectName}-${Date.now()}`,
+    createdAt: new Date().toISOString()
+  };
   logger.info(`Deployment type: ${deploymentType}`);
   logger.info(`Project root: ${projectRoot}`);
   
@@ -168,6 +181,23 @@ export async function deploy(options: DeployOptions): Promise<DeployResult> {
     // Get deployment result
     const result = await getDeploymentResult(projectName);
     
+    // Update deployment status in store
+    deploymentStore[projectName] = {
+      ...deploymentStore[projectName],
+      status: DeploymentStatus.DEPLOYED,
+      success: true,
+      outputs: deployResult.outputs,
+      url: deployResult.outputs.ApiUrl || deployResult.outputs.WebsiteUrl || null,
+      resources: {
+        api: deployResult.outputs.ApiUrl || null,
+        website: deployResult.outputs.WebsiteUrl || null,
+        distribution: deployResult.outputs.CloudFrontDistribution || null,
+        bucket: deployResult.outputs.WebsiteBucket || null
+      },
+      stackName: deployResult.stackName,
+      updatedAt: new Date().toISOString()
+    };
+    
     logger.info(`[DEPLOY COMPLETE] Deployment completed for ${projectName}`);
     return result;
   } catch (error: any) {
@@ -175,6 +205,13 @@ export async function deploy(options: DeployOptions): Promise<DeployResult> {
     
     // Log deployment error
     logger.error(`Deployment process failed: ${error.message}`);
+    
+    // Update deployment status in store
+    if (deploymentStore[projectName]) {
+      deploymentStore[projectName].status = DeploymentStatus.FAILED;
+      deploymentStore[projectName].error = error.message;
+      deploymentStore[projectName].updatedAt = new Date().toISOString();
+    }
     
     return {
       status: DeploymentStatus.FAILED,
@@ -335,4 +372,80 @@ async function getDeploymentResult(projectName: string): Promise<DeployResult> {
     message: 'Deployment completed successfully',
     projectName
   };
+}
+/**
+ * Get the status of a deployment
+ * @param {string} projectName - Project name
+ * @returns {object|null} Deployment status object or null if not found
+ */
+export function getDeploymentStatus(projectName: string): any {
+  logger.debug(`Getting deployment status for ${projectName}`);
+  
+  // Check if we have the deployment in our store
+  if (deploymentStore[projectName]) {
+    return deploymentStore[projectName];
+  }
+  
+  // Try to get deployment information from CloudFormation
+  try {
+    // Look for stacks with the project name prefix
+    const cmd = `aws cloudformation describe-stacks --query "Stacks[?starts_with(StackName, '${projectName}-')]|[0]" --output json`;
+    const { stdout } = require('child_process').execSync(cmd, { encoding: 'utf8' });
+    
+    if (!stdout || stdout.trim() === 'null') {
+      logger.debug(`No deployment found for ${projectName}`);
+      return null;
+    }
+    
+    const stack = JSON.parse(stdout);
+    
+    // Format outputs
+    const outputs: Record<string, string> = {};
+    if (stack.Outputs && Array.isArray(stack.Outputs)) {
+      stack.Outputs.forEach((output: any) => {
+        outputs[output.OutputKey] = output.OutputValue;
+      });
+    }
+    
+    // Determine deployment status
+    let status = DeploymentStatus.IN_PROGRESS;
+    let success = false;
+    let error = null;
+    
+    if (stack.StackStatus.includes('COMPLETE') && !stack.StackStatus.includes('IN_PROGRESS')) {
+      status = DeploymentStatus.DEPLOYED;
+      success = true;
+    } else if (stack.StackStatus.includes('FAILED') || stack.StackStatus.includes('ROLLBACK')) {
+      status = DeploymentStatus.FAILED;
+      error = `Deployment failed with status: ${stack.StackStatus}`;
+    }
+    
+    // Create deployment result
+    const deployment = {
+      projectName,
+      status,
+      success,
+      error,
+      stackName: stack.StackName,
+      deploymentId: stack.StackId,
+      outputs,
+      url: outputs.ApiUrl || outputs.WebsiteUrl || null,
+      resources: {
+        api: outputs.ApiUrl || null,
+        website: outputs.WebsiteUrl || null,
+        distribution: outputs.CloudFrontDistribution || null,
+        bucket: outputs.WebsiteBucket || null
+      },
+      createdAt: stack.CreationTime,
+      updatedAt: stack.LastUpdatedTime || stack.CreationTime
+    };
+    
+    // Store the deployment
+    deploymentStore[projectName] = deployment;
+    
+    return deployment;
+  } catch (error) {
+    logger.error(`Error getting deployment status for ${projectName}:`, error);
+    return null;
+  }
 }
