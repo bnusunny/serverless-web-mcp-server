@@ -11,6 +11,10 @@ import { DeployOptions } from '../../deployment/types.js';
 import { logger } from '../../utils/logger.js';
 import path from 'path';
 import fs from 'fs';
+import * as os from 'os';
+
+// Define the directory where deployment status files will be stored
+const DEPLOYMENT_STATUS_DIR = path.join(os.tmpdir(), 'serverless-web-mcp-deployments');
 
 /**
  * Checks if dependencies appear to be installed in the builtArtifactsPath
@@ -43,6 +47,58 @@ function checkDependenciesInstalled(builtArtifactsPath: string, runtime: string)
 }
 
 /**
+ * Check if a deployment type change is destructive
+ * @param currentType Previous deployment type
+ * @param newType New deployment type
+ * @returns Object with isDestructive flag and warning message
+ */
+async function checkDestructiveDeploymentChange(projectName: string, newType: string): Promise<{isDestructive: boolean, warning?: string}> {
+  try {
+    // Check if there's an existing deployment
+    const statusFilePath = path.join(DEPLOYMENT_STATUS_DIR, `${projectName}.json`);
+    
+    if (!fs.existsSync(statusFilePath)) {
+      // No existing deployment, so not destructive
+      return { isDestructive: false };
+    }
+    
+    // Read the existing deployment status
+    const statusData = JSON.parse(fs.readFileSync(statusFilePath, 'utf8'));
+    const currentType = statusData.deploymentType;
+    
+    if (!currentType || currentType === newType) {
+      // No type change or same type, not destructive
+      return { isDestructive: false };
+    }
+    
+    // Define destructive changes
+    const destructiveChanges = [
+      { from: 'backend', to: 'frontend' },
+      { from: 'frontend', to: 'backend' },
+      { from: 'fullstack', to: 'backend' },
+      { from: 'fullstack', to: 'frontend' }
+    ];
+    
+    // Check if this is a destructive change
+    const isDestructive = destructiveChanges.some(change => 
+      change.from === currentType && change.to === newType
+    );
+    
+    if (isDestructive) {
+      return {
+        isDestructive: true,
+        warning: `WARNING: Changing deployment type from ${currentType} to ${newType} is destructive and may result in data loss. Existing resources will be deleted. Please confirm you want to proceed with this change.`
+      };
+    }
+    
+    return { isDestructive: false };
+  } catch (error) {
+    logger.error('Error checking for destructive deployment change', error);
+    return { isDestructive: false }; // Default to non-destructive on error
+  }
+}
+
+/**
  * Handler for the deploy tool
  */
 export async function handleDeploy(params: DeployOptions): Promise<any> {
@@ -59,6 +115,25 @@ export async function handleDeploy(params: DeployOptions): Promise<any> {
               success: false,
               message: "Project root is required",
               error: "Missing required parameter: projectRoot"
+            }, null, 2)
+          }
+        ]
+      };
+    }
+    
+    // Check if this is a destructive deployment type change
+    const destructiveCheck = await checkDestructiveDeploymentChange(params.projectName, params.deploymentType);
+    if (destructiveCheck.isDestructive) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify({
+              success: false,
+              message: "Destructive deployment type change detected",
+              warning: destructiveCheck.warning,
+              error: "Destructive change requires confirmation",
+              action: "Please confirm this destructive change by adding 'confirmDestructiveChange: true' to your deployment parameters."
             }, null, 2)
           }
         ]
@@ -181,6 +256,7 @@ const deployTool: McpTool = {
     projectName: z.string().describe('Project name'),
     projectRoot: z.string().describe('Absolute path to the project root directory where SAM template will be generated. Must be an absolute path (e.g., /home/user/projects/myapp)'),
     region: z.string().optional().default('us-east-1').describe('AWS region'),
+    confirmDestructiveChange: z.boolean().optional().default(false).describe('Set to true to confirm destructive deployment type changes'),
     backendConfiguration: z.object({
       builtArtifactsPath: z.string().describe('Path to pre-built backend artifacts. Can be absolute or relative to projectRoot'),
       framework: z.string().optional().describe('Backend framework'),
