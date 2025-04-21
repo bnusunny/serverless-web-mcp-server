@@ -13,10 +13,10 @@ import { logger } from '../../utils/logger.js';
  * Handler for the deployment details resource
  */
 export async function handleDeploymentDetails(params: any): Promise<any> {
+  const { projectName } = params;
+  logger.debug('Deployment details resource called', { projectName });
+
   try {
-    const { projectName } = params;
-    logger.debug('Deployment details resource called', { projectName });
-    
     // Get deployment status - using the async function from status.ts
     const deployment = await getDeploymentStatus(projectName);
     
@@ -90,7 +90,7 @@ export async function handleDeploymentDetails(params: any): Promise<any> {
     
     return {
       contents: [{
-        uri: `deployment:error`,
+        uri: `deployment:${projectName}`,
         text: JSON.stringify({
           error: `Failed to get deployment details: ${error.message}`
         }, null, 2)
