@@ -273,7 +273,6 @@ resolve_s3 = true
 region = "${configuration.region}"
 confirm_changeset = false
 capabilities = "CAPABILITY_IAM"
-disable_rollback = true
 `;
     fs.writeFileSync(samConfigPath, samConfigContent);
     logger.debug(`Created samconfig.toml at ${samConfigPath}`);

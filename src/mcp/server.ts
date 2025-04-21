@@ -54,27 +54,12 @@ export function createMcpServer(): McpServer {
 
   // Register resources
   resources.forEach((resource: McpResource) => {
-    const originalHandler = resource.handler;
-    
-    // Wrap the resource handler with logging
-    const wrappedHandler = async (params: any) => {
-      logger.debug(`[RESOURCE ACCESSED] ${resource.name}`, { params });
-      try {
-        const result = await originalHandler(params);
-        logger.debug(`[RESOURCE RESULT] ${resource.name}`, { result });
-        return result;
-      } catch (error) {
-        logger.error(`[RESOURCE ERROR] ${resource.name}`, { error });
-        throw error;
-      }
-    };
-    
     if (typeof resource.uri === 'string') {
       // Static resource with a fixed URI
-      server.resource(resource.name, resource.uri, wrappedHandler);
+      server.resource(resource.name, resource.uri, resource.handler);
     } else {
       // Dynamic resource with a template URI
-      server.resource(resource.name, resource.uri, wrappedHandler);
+      server.resource(resource.name, resource.uri, resource.handler);
     }
   });
 

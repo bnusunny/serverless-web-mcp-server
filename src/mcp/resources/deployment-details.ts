@@ -18,7 +18,7 @@ export async function handleDeploymentDetails(projectName: string): Promise<any>
   try {
     // Get deployment status - using the async function from status.ts
     const deployment = await getDeploymentStatus(projectName);
-    
+
     if (!deployment || deployment.status === 'not_found') {
       return {
         contents: [{
@@ -33,13 +33,13 @@ export async function handleDeploymentDetails(projectName: string): Promise<any>
         }
       };
     }
-    
+
     // Format the response based on deployment status
     let responseData: any = {
       projectName,
       status: deployment.status
     };
-    
+
     if (deployment.status === 'completed') {
       responseData = {
         ...responseData,
@@ -73,7 +73,7 @@ export async function handleDeploymentDetails(projectName: string): Promise<any>
         note: "Check this resource again in a few moments for updated status."
       };
     }
-    
+
     // Return in the format expected by MCP protocol
     return {
       contents: [{
@@ -86,7 +86,7 @@ export async function handleDeploymentDetails(projectName: string): Promise<any>
     };
   } catch (error: any) {
     logger.error('Deployment details resource error', { error: error.message, stack: error.stack });
-    
+
     return {
       contents: [{
         uri: `deployment:${projectName}`,
@@ -108,26 +108,9 @@ const deploymentDetailsResource: McpResource = {
   name: 'deployment-details',
   uri: new ResourceTemplate("deployment:{projectName}", { list: undefined }),
   description: 'Get details about a specific deployment',
-  handler: async (uri: URL, variables: any) => {
-    // Extract projectName directly from variables
-    const projectName = variables.projectName;
-    logger.debug('Handler received variables:', { variables, projectName });
-    
-    if (!projectName) {
-      return {
-        contents: [{
-          uri: 'deployment:error',
-          text: JSON.stringify({
-            error: 'Missing project name',
-            message: 'The project name is required to retrieve deployment details.'
-          }, null, 2)
-        }],
-        metadata: {
-          error: 'Missing project name'
-        }
-      };
-    }
-    
+  handler: async (uri: URL, { projectName }) => {
+    logger.debug('Handler received variables:', { projectName });
+
     return handleDeploymentDetails(projectName);
   }
 };
