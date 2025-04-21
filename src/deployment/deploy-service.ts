@@ -156,7 +156,14 @@ export async function deploy(options: DeployOptions): Promise<DeployResult> {
     await generateSamTemplate(projectRoot, configuration, deploymentType);
     
     // Deploy the application
-    await buildAndDeployApplication(projectRoot, configuration, deploymentType);
+    const deployResult = await buildAndDeployApplication(projectRoot, configuration, deploymentType);
+    
+    // Upload frontend assets for frontend or fullstack deployments
+    if ((deploymentType === 'frontend' || deploymentType === 'fullstack') && 
+        configuration.frontendConfiguration?.builtAssetsPath) {
+      logger.info('Uploading frontend assets...');
+      await uploadFrontendAssets(configuration, deployResult);
+    }
     
     // Get deployment result
     const result = await getDeploymentResult(projectName);
@@ -220,13 +227,13 @@ async function generateSamTemplate(
  * @param {string} projectRoot - Project root directory
  * @param {DeploymentConfiguration} configuration - Deployment configuration
  * @param {string} deploymentType - Deployment type
- * @returns {Promise<void>}
+ * @returns {Promise<any>} Deployment result with outputs
  */
 async function buildAndDeployApplication(
   projectRoot: string,
   configuration: DeploymentConfiguration,
   deploymentType: string
-): Promise<void> {
+): Promise<any> {
   logger.info('Deploying application...');
   
   const stackName = `${configuration.projectName}-${Date.now().toString().slice(-6)}`;
@@ -276,9 +283,41 @@ disable_rollback = true
     });
     
     logger.info('SAM deployment completed successfully');
+    
+    // Get the deployment outputs
+    const outputs = await getStackOutputs(stackName, configuration.region);
+    return { stackName, outputs };
   } catch (error) {
     logger.error(`SAM deployment failed: ${error}`);
     throw new Error(`Failed to deploy application: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
+/**
+ * Get CloudFormation stack outputs
+ * @param {string} stackName - Stack name
+ * @param {string} region - AWS region
+ * @returns {Promise<any>} Stack outputs
+ */
+async function getStackOutputs(stackName: string, region: string): Promise<any> {
+  try {
+    const { stdout } = await promisify(exec)(
+      `aws cloudformation describe-stacks --stack-name ${stackName} --region ${region} --query "Stacks[0].Outputs" --output json`
+    );
+    
+    const outputs = JSON.parse(stdout);
+    const result: Record<string, string> = {};
+    
+    if (Array.isArray(outputs)) {
+      outputs.forEach(output => {
+        result[output.OutputKey] = output.OutputValue;
+      });
+    }
+    
+    return result;
+  } catch (error) {
+    logger.error(`Failed to get stack outputs: ${error}`);
+    return {};
   }
 }
 
