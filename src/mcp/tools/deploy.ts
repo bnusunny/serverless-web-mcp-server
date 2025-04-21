@@ -4,245 +4,53 @@
  * Handles deployment of web applications to AWS serverless infrastructure.
  */
 
+import { z } from 'zod';
+import { McpTool } from '../types/mcp-tool.js';
+import { deployApplication } from '../../deployment/deploy-service.js';
 import { logger } from '../../utils/logger.js';
-import { deploy } from '../../deployment/deploy-service.js';
-import { DeploymentStatus } from '../../deployment/types.js';
+import path from 'path';
 
 /**
- * Handle deploy tool invocation
- * @param {Object} params - Parameters for the deployment
- * @returns {Promise<Object>} Deployment result
+ * Handler for the deploy tool
  */
-export async function handleDeploy(params) {
-  logger.info(`Starting deployment for project: ${params.projectName}`);
-  logger.info(`Deployment type: ${params.deploymentType}`);
-  
+export async function handleDeploy(params: any): Promise<any> {
   try {
-    // Log deployment parameters for debugging
-    logger.debug('Deployment parameters:', JSON.stringify(params, null, 2));
+    logger.debug('Deploy tool called with params', { params });
     
-    // Start deployment
-    const result = await deploy(params);
-    
-    // Format the response based on deployment status
-    switch (result.status) {
-      case DeploymentStatus.DEPLOYED:
-        logger.info(`Deployment successful for project: ${params.projectName}`);
-        return formatSuccessResponse(result, params.deploymentType);
-        
-      case DeploymentStatus.PARTIAL:
-        logger.warn(`Partial deployment for project: ${params.projectName}`);
-        return formatPartialResponse(result, params.deploymentType);
-        
-      case DeploymentStatus.FAILED:
-        logger.error(`Deployment failed for project: ${params.projectName}`);
-        return formatErrorResponse(result, params.deploymentType);
-      
-      case 'error': // Handle legacy 'error' status
-        logger.error(`Deployment failed for project: ${params.projectName}`);
-        // Convert to proper DeploymentStatus.FAILED
-        result.status = DeploymentStatus.FAILED;
-        return formatErrorResponse(result, params.deploymentType);
-        
-      default:
-        logger.warn(`Unknown deployment status: ${result.status}`);
-        return {
-          success: false,
-          message: `Unknown deployment status: ${result.status}`,
-          content: [
-            {
-              type: "text",
-              text: `Unknown deployment status: ${result.status}`
-            }
-          ],
-          result
-        };
-    }
-  } catch (error) {
-    logger.error(`Error in deploy tool: ${error.message}`);
-    return {
-      success: false,
-      message: `Deployment failed: ${error.message}`,
-      content: [
-        {
-          type: "text",
-          text: `Deployment failed: ${error.message}\n\nStack Trace:\n${error.stack || "No stack trace available"}`
-        }
-      ],
-      error: error.message,
-      stackTrace: error.stack
-    };
-  }
-}
-
-/**
- * Format a successful deployment response
- * @param {Object} result - Deployment result
- * @param {string} deploymentType - Type of deployment
- * @returns {Object} Formatted response
- */
-function formatSuccessResponse(result, deploymentType) {
-  let responseText = `Deployment completed successfully!\n\n`;
-  
-  switch (deploymentType) {
-    case 'backend':
-      responseText += `Deployment Type: Backend\n`;
-      if (result.url) {
-        responseText += `API URL: ${result.url}\n\n`;
-      }
-      
-      if (result.outputs && Object.keys(result.outputs).length > 0) {
-        responseText += `Outputs:\n${JSON.stringify(result.outputs, null, 2)}\n`;
-      }
-      
+    // Validate that projectRoot is provided and is an absolute path or convert it
+    if (!params.projectRoot) {
       return {
-        success: true,
-        message: result.message,
-        deploymentType,
-        status: result.status,
-        apiUrl: result.url,
-        endpoints: {
-          api: result.url
-        },
-        outputs: result.outputs || {},
-        content: [
-          {
-            type: "text",
-            text: responseText
-          }
-        ]
+        success: false,
+        message: "Project root is required",
+        error: "Missing required parameter: projectRoot"
       };
-      
-    case 'frontend':
-      responseText += `Deployment Type: Frontend\n`;
-      if (result.url) {
-        responseText += `Website URL: ${result.url}\n`;
-      }
-      if (result.bucketName) {
-        responseText += `S3 Bucket: ${result.bucketName}\n`;
-      }
-      if (result.distributionUrl) {
-        responseText += `CloudFront Distribution: ${result.distributionUrl}\n`;
-      }
-      
-      return {
-        success: true,
-        message: result.message,
-        deploymentType,
-        status: result.status,
-        websiteUrl: result.url,
-        endpoints: {
-          website: result.url
-        },
-        bucketName: result.bucketName,
-        distributionUrl: result.distributionUrl,
-        content: [
-          {
-            type: "text",
-            text: responseText
-          }
-        ]
-      };
-      
-    case 'fullstack':
-      responseText += `Deployment Type: Fullstack\n`;
-      if (result.backendUrl) {
-        responseText += `API URL: ${result.backendUrl}\n`;
-      }
-      if (result.frontendUrl) {
-        responseText += `Website URL: ${result.frontendUrl}\n`;
-      }
-      
-      if (result.backendResult?.outputs && Object.keys(result.backendResult.outputs).length > 0) {
-        responseText += `\nBackend Outputs:\n${JSON.stringify(result.backendResult.outputs, null, 2)}\n`;
-      }
-      
-      return {
-        success: true,
-        message: result.message,
-        deploymentType,
-        status: result.status,
-        endpoints: {
-          api: result.backendUrl,
-          website: result.frontendUrl
-        },
-        backend: {
-          apiUrl: result.backendUrl,
-          outputs: result.backendResult?.outputs || {}
-        },
-        frontend: {
-          websiteUrl: result.frontendUrl,
-          bucketName: result.frontendResult?.bucketName,
-          distributionUrl: result.frontendResult?.distributionUrl
-        },
-        content: [
-          {
-            type: "text",
-            text: responseText
-          }
-        ]
-      };
-      
-    default:
-      return {
-        success: true,
-        message: result.message,
-        deploymentType,
-        status: result.status,
-        content: [
-          {
-            type: "text",
-            text: responseText
-          }
-        ]
-      };
-  }
-}
-
-/**
- * Format a partial deployment response
- * @param {Object} result - Deployment result
- * @param {string} deploymentType - Type of deployment
- * @returns {Object} Formatted response
- */
-function formatPartialResponse(result, deploymentType) {
-  let responseText = `Partial Deployment: Some components were deployed successfully, but others failed.\n\n`;
-  responseText += `Error: ${result.error || "Unknown error"}\n\n`;
-  
-  // Only applicable for fullstack deployments
-  if (deploymentType === 'fullstack') {
-    const backendSuccess = result.backendResult?.status === DeploymentStatus.DEPLOYED;
-    const frontendSuccess = result.frontendResult?.status === DeploymentStatus.DEPLOYED;
-    
-    responseText += `Backend Status: ${backendSuccess ? "Deployed successfully" : "Deployment failed"}\n`;
-    responseText += `Frontend Status: ${frontendSuccess ? "Deployed successfully" : "Deployment failed"}\n\n`;
-    
-    if (result.backendResult?.url) {
-      responseText += `API URL: ${result.backendResult.url}\n`;
     }
     
-    if (result.frontendResult?.url) {
-      responseText += `Website URL: ${result.frontendResult.url}\n`;
-    }
+    // Create a deployment ID for tracking
+    const deploymentId = `${params.projectName}-${Date.now()}`;
     
-    return {
-      success: false,
-      partialSuccess: true,
-      message: result.message,
-      deploymentType,
-      status: result.status,
-      error: result.error,
-      backend: {
-        success: backendSuccess,
-        apiUrl: result.backendResult?.url,
-        outputs: result.backendResult?.outputs || {}
-      },
-      frontend: {
-        success: frontendSuccess,
-        websiteUrl: result.frontendResult?.url,
-        bucketName: result.frontendResult?.bucketName,
-        distributionUrl: result.frontendResult?.distributionUrl
-      },
+    // Start the deployment process in the background with setTimeout(0)
+    setTimeout(() => {
+      deployApplication(params)
+        .then(result => {
+          logger.info(`Background deployment completed for ${params.projectName} with status: ${result.status}`);
+        })
+        .catch(error => {
+          logger.error(`Background deployment failed for ${params.projectName}:`, error);
+        });
+    }, 0);
+    
+    // Return an immediate response
+    const responseText = JSON.stringify({
+      success: true,
+      message: `Deployment of ${params.projectName} initiated successfully.`,
+      status: 'INITIATED',
+      deploymentId: deploymentId,
+      note: `The deployment process is running in the background and may take several minutes to complete.`,
+      checkStatus: `To check the status of your deployment, use the resource: deployment:${params.projectName}`
+    }, null, 2);
+    
+    const response = {
       content: [
         {
           type: "text",
@@ -250,78 +58,23 @@ function formatPartialResponse(result, deploymentType) {
         }
       ]
     };
-  }
-  
-  return {
-    success: false,
-    partialSuccess: true,
-    message: result.message,
-    deploymentType,
-    status: result.status,
-    error: result.error,
-    content: [
-      {
-        type: "text",
-        text: responseText
-      }
-    ]
-  };
-}
-
-/**
- * Format an error deployment response
- * @param {Object} result - Deployment result
- * @param {string} deploymentType - Type of deployment
- * @returns {Object} Formatted response
- */
-function formatErrorResponse(result, deploymentType) {
-  let responseText = `Deployment Failed: ${result.message}\n\n`;
-  responseText += `Error: ${result.error || "Unknown error"}\n\n`;
-  
-  // Add validation results if available
-  if (result.validationResult) {
-    if (result.validationResult.errors && result.validationResult.errors.length > 0) {
-      responseText += `Validation Errors:\n`;
-      result.validationResult.errors.forEach(err => {
-        responseText += `- ${err.message}\n`;
-        if (err.suggestion) {
-          responseText += `  Suggestion: ${err.suggestion}\n`;
-        }
-      });
-      responseText += `\n`;
-    }
     
-    if (result.validationResult.warnings && result.validationResult.warnings.length > 0) {
-      responseText += `Validation Warnings:\n`;
-      result.validationResult.warnings.forEach(warn => {
-        responseText += `- ${warn.message}\n`;
-        if (warn.suggestion) {
-          responseText += `  Suggestion: ${warn.suggestion}\n`;
+    logger.debug('Deploy tool response', { response });
+    return response;
+  } catch (error: any) {
+    logger.error('Deploy tool error', { error: error.message, stack: error.stack });
+    
+    return {
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify({
+            success: false,
+            message: `Deployment failed: ${error.message}`,
+            error: error.message
+          }, null, 2)
         }
-      });
-      responseText += `\n`;
-    }
+      ]
+    };
   }
-  
-  // Add phase information if available
-  if (result.phase) {
-    responseText += `Failed Phase: ${result.phase}\n`;
-  }
-  
-  return {
-    success: false,
-    message: result.message,
-    deploymentType,
-    status: result.status,
-    error: result.error,
-    validationErrors: result.validationResult?.errors,
-    validationWarnings: result.validationResult?.warnings,
-    failedPhase: result.phase,
-    content: [
-      {
-        type: "text",
-        text: responseText
-      }
-    ]
-  };
 }
