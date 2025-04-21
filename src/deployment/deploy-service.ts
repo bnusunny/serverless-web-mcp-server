@@ -207,8 +207,60 @@ async function buildAndDeployApplication(
   configuration: DeploymentConfiguration,
   deploymentType: string
 ): Promise<void> {
-  // Implementation details...
-  logger.info('Building and deploying application...');
+  logger.info('Deploying application...');
+  
+  const stackName = `${configuration.projectName}-${Date.now().toString().slice(-6)}`;
+  
+  try {
+    // Create samconfig.toml file
+    const samConfigPath = path.join(projectRoot, 'samconfig.toml');
+    const samConfigContent = `
+[default]
+[default.deploy]
+[default.deploy.parameters]
+stack_name = "${stackName}"
+s3_bucket = "aws-sam-cli-managed-default-samclisourcebucket-${Math.random().toString(36).substring(2, 10)}"
+s3_prefix = "${stackName}"
+region = "${configuration.region}"
+confirm_changeset = false
+capabilities = "CAPABILITY_IAM"
+disable_rollback = true
+`;
+    fs.writeFileSync(samConfigPath, samConfigContent);
+    logger.debug(`Created samconfig.toml at ${samConfigPath}`);
+    
+    // Deploy the SAM application
+    logger.info(`Deploying SAM application with stack name: ${stackName}...`);
+    await new Promise<void>((resolve, reject) => {
+      const samDeploy = spawn('sam', [
+        'deploy',
+        '--stack-name', stackName,
+        '--region', configuration.region,
+        '--capabilities', 'CAPABILITY_IAM',
+        '--no-confirm-changeset'
+      ], {
+        cwd: projectRoot,
+        stdio: 'inherit'
+      });
+      
+      samDeploy.on('close', (code) => {
+        if (code === 0) {
+          resolve();
+        } else {
+          reject(new Error(`SAM deploy failed with code ${code}`));
+        }
+      });
+      
+      samDeploy.on('error', (err) => {
+        reject(err);
+      });
+    });
+    
+    logger.info('SAM deployment completed successfully');
+  } catch (error) {
+    logger.error(`SAM deployment failed: ${error}`);
+    throw new Error(`Failed to deploy application: ${error instanceof Error ? error.message : String(error)}`);
+  }
 }
 
 /**
