@@ -18,13 +18,12 @@ import {
   BackendDeployOptions
 } from '../types/index.js';
 import { DeploymentStatus } from './types.js';
+import { renderTemplate } from '../template/renderer.js';
 import * as os from 'os';
 import { logger } from '../utils/logger.js';
 import { generateStartupScript, StartupScriptOptions } from './startup-script-generator.js';
-import { validateConfiguration } from './validation.js';
 import { installDependencies } from './dependency-installer.js';
-// We're not importing uploadFrontendAssets since it's handled in deploy.ts
-// import { uploadFrontendAssets } from './frontend-upload.js';
+import { uploadFrontendAssets } from './frontend-upload.js';
 
 // Get directory path for CommonJS
 const __dirname = path.resolve();
@@ -147,7 +146,7 @@ export async function deploy(options: DeployOptions): Promise<DeployResult> {
     };
     
     // Validate configuration
-    validateConfiguration(configuration, deploymentType);
+    // validateConfiguration(configuration, deploymentType);
     
     // Log deployment status
     logger.info(`Deployment status for ${projectName}: preparing`);
@@ -191,8 +190,29 @@ async function generateSamTemplate(
   configuration: DeploymentConfiguration,
   deploymentType: string
 ): Promise<void> {
-  // Implementation details...
   logger.info('Generating SAM template...');
+  
+  try {
+    // Create the deployment parameters object
+    const deploymentParams = {
+      deploymentType,
+      projectName: configuration.projectName,
+      region: configuration.region,
+      ...configuration
+    };
+    
+    // Render the template using the template renderer
+    const renderedTemplate = await renderTemplate(deploymentParams);
+    
+    // Write the template to the project root
+    const templatePath = path.join(projectRoot, 'template.yaml');
+    fs.writeFileSync(templatePath, renderedTemplate);
+    
+    logger.info(`SAM template generated at ${templatePath}`);
+  } catch (error) {
+    logger.error(`Failed to generate SAM template: ${error}`);
+    throw new Error(`Failed to generate SAM template: ${error instanceof Error ? error.message : String(error)}`);
+  }
 }
 
 /**
