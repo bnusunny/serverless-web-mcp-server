@@ -133,22 +133,6 @@ export async function deployApplication(options: DeployOptions): Promise<DeployR
       // Generate a startup script if requested
       else if (options.backendConfiguration.generateStartupScript && 
                options.backendConfiguration.entryPoint) {
-          const isExecutable = !!(stats.mode & 0o111); // Check if any execute bit is set
-          
-          if (!isExecutable) {
-            logger.warn(`Startup script ${scriptPath} is not executable. Making it executable...`);
-            fs.chmodSync(scriptPath, 0o755);
-          }
-        } catch (error) {
-          throw new Error(`Failed to check permissions on startup script: ${error instanceof Error ? error.message : String(error)}`);
-        }
-        
-        // Keep the original relative path for the startup script
-        logger.info(`Using provided startup script: ${options.backendConfiguration.startupScript}`);
-      }
-      // Generate a startup script if requested
-      else if (options.backendConfiguration.generateStartupScript && 
-               options.backendConfiguration.entryPoint) {
         
         logger.info(`Generating startup script for ${projectName}...`);
         
