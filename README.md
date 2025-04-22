@@ -54,10 +54,10 @@ Provides contextual information about:
 
 Exposes deployment capabilities as tools:
 - `deploy`: Deploy web applications to AWS serverless infrastructure
-- `configure-domain`: Set up custom domains and SSL certificates
-- `provision-database`: Create and configure database resources
-- `get-logs`: Retrieve application logs (placeholder implementation)
-- `get-metrics`: Fetch performance metrics (placeholder implementation)
+- `get_logs`: Retrieve application logs from CloudWatch
+- `get_metrics`: Fetch performance metrics for deployed applications
+- `deployment_help`: Get help with deployment requirements and troubleshooting
+- `update_frontend`: Update frontend assets without redeploying the entire infrastructure
 
 ### Transport Options
 
