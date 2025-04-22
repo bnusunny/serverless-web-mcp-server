@@ -46,11 +46,6 @@ if (!fs.existsSync(DEPLOYMENT_STATUS_DIR)) {
 export async function deployApplication(options: DeployOptions): Promise<DeployResult> {
   const { deploymentType, projectName } = options;
   
-  // Convert relative project root to absolute path
-  const projectRoot = path.isAbsolute(options.projectRoot) 
-    ? options.projectRoot 
-    : path.resolve(process.cwd(), options.projectRoot);
-  
   logger.info(`[DEPLOY START] Starting deployment process for ${projectName}`);
   
   // Update deployment status using the status.ts module
