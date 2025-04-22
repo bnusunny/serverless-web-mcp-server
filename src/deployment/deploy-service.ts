@@ -98,7 +98,9 @@ export async function deployApplication(options: DeployOptions): Promise<DeployR
         }
         
         // Resolve the full path to the builtArtifactsPath
-        const fullArtifactsPath = options.backendConfiguration.builtArtifactsPath;
+        const fullArtifactsPath = path.isAbsolute(options.backendConfiguration.builtArtifactsPath)
+          ? options.backendConfiguration.builtArtifactsPath
+          : path.resolve(projectRoot, options.backendConfiguration.builtArtifactsPath);
         
         // Construct the full path to the startup script
         const scriptPath = path.join(fullArtifactsPath, options.backendConfiguration.startupScript);
