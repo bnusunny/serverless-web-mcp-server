@@ -26,11 +26,25 @@ function checkDependenciesInstalled(builtArtifactsPath: string, runtime: string)
       return fs.existsSync(path.join(builtArtifactsPath, 'node_modules'));
     }
     
-    // For Python, check for site-packages or dist-packages directories
+    // For Python, check for dependencies
     if (runtime.includes('python')) {
-      return fs.existsSync(path.join(builtArtifactsPath, 'site-packages')) || 
-             fs.existsSync(path.join(builtArtifactsPath, '.venv')) ||
-             fs.existsSync(path.join(builtArtifactsPath, 'dist-packages'));
+      // Check for traditional Python package directories
+      if (fs.existsSync(path.join(builtArtifactsPath, 'site-packages')) || 
+          fs.existsSync(path.join(builtArtifactsPath, '.venv')) ||
+          fs.existsSync(path.join(builtArtifactsPath, 'dist-packages'))) {
+        return true;
+      }
+      
+      // Check for pip installed dependencies directly in the directory (using -t .)
+      // Look for .dist-info directories which indicate installed packages
+      try {
+        const files = fs.readdirSync(builtArtifactsPath);
+        // If we find any .dist-info directories, we have dependencies
+        return files.some(file => file.endsWith('.dist-info'));
+      } catch (error) {
+        logger.error('Error reading directory for Python dependencies', error);
+        return false;
+      }
     }
     
     // For Ruby, check for vendor/bundle directory
@@ -261,16 +275,16 @@ Please install dependencies and try again.
  */
 const deployTool: McpTool = {
   name: 'deploy',
-  description: 'Deploy web applications to AWS serverless infrastructure, including database resources like DynamoDB tables.',
+  description: 'Deploy web applications to AWS, including database resources like DynamoDB tables.',
   parameters: {
     deploymentType: z.enum(['backend', 'frontend', 'fullstack']).describe('Type of deployment'),
     projectName: z.string().describe('Project name'),
-    projectRoot: z.string().describe('Absolute path to the project root directory where SAM template will be generated. Must be an absolute path (e.g., /home/user/projects/myapp)'),
+    projectRoot: z.string().describe('Absolute path to the project root directory'),
     region: z.string().optional().default('us-east-1').describe('AWS region'),
     backendConfiguration: z.object({
       builtArtifactsPath: z.string().describe('Path to pre-built backend artifacts. Can be absolute or relative to projectRoot'),
       framework: z.string().optional().describe('Backend framework'),
-      runtime: z.string().describe('Lambda runtime (e.g. nodejs18.x, python3.9)'),
+      runtime: z.string().describe('Lambda runtime (e.g. nodejs22.x, nodejs20.x, nodejs18.x, python3.13, python3.12, python3.11, python3.10, python3.9)'),
       startupScript: z.string().optional().describe('Startup script that must be executable in Linux environment (chmod +x) and take no parameters. Required unless entryPoint and generateStartupScript are provided.'),
       entryPoint: z.string().optional().describe('Application entry point file (e.g., app.js, app.py). If provided with generateStartupScript=true, a startup script will be automatically generated.'),
       generateStartupScript: z.boolean().optional().default(false).describe('Whether to automatically generate a startup script based on the runtime and entry point'),
