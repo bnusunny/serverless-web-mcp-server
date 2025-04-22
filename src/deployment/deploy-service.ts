@@ -67,7 +67,7 @@ export async function deployApplication(options: DeployOptions): Promise<DeployR
       
       if (!path.isAbsolute(options.backendConfiguration.builtArtifactsPath)) {
         options.backendConfiguration.builtArtifactsPath = path.resolve(
-          process.cwd(), 
+          projectRoot, 
           options.backendConfiguration.builtArtifactsPath
         );
       }
@@ -81,7 +81,7 @@ export async function deployApplication(options: DeployOptions): Promise<DeployR
       
       if (!path.isAbsolute(options.frontendConfiguration.builtAssetsPath)) {
         options.frontendConfiguration.builtAssetsPath = path.resolve(
-          process.cwd(), 
+          projectRoot, 
           options.frontendConfiguration.builtAssetsPath
         );
       }
