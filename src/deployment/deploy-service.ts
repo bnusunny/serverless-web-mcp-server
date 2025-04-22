@@ -84,32 +84,74 @@ export async function deployApplication(options: DeployOptions): Promise<DeployR
       logger.info(`Frontend assets path: ${options.frontendConfiguration.builtAssetsPath}`);
     }
     
-    // Check if we need to generate a startup script
+    // Check if we need to generate a startup script or if one was provided
     if ((deploymentType === 'backend' || deploymentType === 'fullstack') && 
-        options.backendConfiguration?.generateStartupScript && 
-        options.backendConfiguration?.entryPoint) {
+        options.backendConfiguration) {
       
-      logger.info(`Generating startup script for ${projectName}...`);
-      
-      try {
-        const startupScriptName = await generateStartupScript({
-          runtime: options.backendConfiguration.runtime,
-          entryPoint: options.backendConfiguration.entryPoint,
-          builtArtifactsPath: options.backendConfiguration.builtArtifactsPath,
-          startupScriptName: options.backendConfiguration.startupScript,
-          additionalEnv: options.backendConfiguration.environment
-        });
+      // If a startup script was provided, verify it exists and is relative to builtArtifactsPath
+      if (options.backendConfiguration.startupScript) {
+        logger.info(`Verifying provided startup script: ${options.backendConfiguration.startupScript}`);
         
-        // Update the configuration with the generated script name
-        options.backendConfiguration.startupScript = startupScriptName;
-        
-        logger.info(`Startup script generated: ${startupScriptName}`);
-      } catch (error: any) {
-        if (error.name === 'EntryPointNotFoundError') {
-          // Provide a more helpful error message for entry point not found
-          throw new Error(`Failed to generate startup script: ${error.message}. Please check that your entry point file exists in the built artifacts directory and the path is correct.`);
+        // Check if the provided startup script is an absolute path
+        if (path.isAbsolute(options.backendConfiguration.startupScript)) {
+          throw new Error(`Startup script must be relative to builtArtifactsPath, not an absolute path. Please provide a path relative to ${options.backendConfiguration.builtArtifactsPath}.`);
         }
-        throw error;
+        
+        // Check if the startup script exists in the builtArtifactsPath
+        const scriptPath = path.join(options.backendConfiguration.builtArtifactsPath, 
+          path.basename(options.backendConfiguration.startupScript));
+        
+        if (!fs.existsSync(scriptPath)) {
+          throw new Error(`Startup script not found at ${scriptPath}. The startup script should be located in the builtArtifactsPath directory and specified as a relative path.`);
+        }
+        
+        // Check if the script is executable
+        try {
+          const stats = fs.statSync(scriptPath);
+          const isExecutable = !!(stats.mode & 0o111); // Check if any execute bit is set
+          
+          if (!isExecutable) {
+            logger.warn(`Startup script ${scriptPath} is not executable. Making it executable...`);
+            fs.chmodSync(scriptPath, 0o755);
+          }
+        } catch (error) {
+          throw new Error(`Failed to check permissions on startup script: ${error instanceof Error ? error.message : String(error)}`);
+        }
+        
+        // Update the startup script to be just the filename
+        options.backendConfiguration.startupScript = path.basename(options.backendConfiguration.startupScript);
+        logger.info(`Using provided startup script: ${options.backendConfiguration.startupScript}`);
+      }
+      // Generate a startup script if requested
+      else if (options.backendConfiguration.generateStartupScript && 
+               options.backendConfiguration.entryPoint) {
+        
+        logger.info(`Generating startup script for ${projectName}...`);
+        
+        try {
+          const startupScriptName = await generateStartupScript({
+            runtime: options.backendConfiguration.runtime,
+            entryPoint: options.backendConfiguration.entryPoint,
+            builtArtifactsPath: options.backendConfiguration.builtArtifactsPath,
+            startupScriptName: options.backendConfiguration.startupScript,
+            additionalEnv: options.backendConfiguration.environment
+          });
+          
+          // Update the configuration with the generated script name
+          options.backendConfiguration.startupScript = startupScriptName;
+          
+          logger.info(`Startup script generated: ${startupScriptName}`);
+        } catch (error: any) {
+          if (error.name === 'EntryPointNotFoundError') {
+            // Provide a more helpful error message for entry point not found
+            throw new Error(`Failed to generate startup script: ${error.message}. Please check that your entry point file exists in the built artifacts directory and the path is correct.`);
+          }
+          throw error;
+        }
+      }
+      // Neither startup script nor generateStartupScript+entryPoint provided
+      else if (!options.backendConfiguration.startupScript) {
+        throw new Error(`No startup script provided or generated. Please either provide a startupScript or set generateStartupScript=true with an entryPoint.`);
       }
     }
     
