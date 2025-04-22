@@ -44,13 +44,6 @@ export async function handleDeploymentDetails(projectName: string): Promise<any>
       responseData = {
         ...responseData,
         success: true,
-        deploymentUrl: deployment.endpoint,
-        resources: {
-          api: deployment.outputs?.ApiUrl || null,
-          website: deployment.outputs?.WebsiteURL || null,
-          distribution: deployment.outputs?.CloudFrontDistribution || null,
-          bucket: deployment.outputs?.WebsiteBucket || null
-        },
         outputs: deployment.outputs,
         stackName: deployment.stackName,
         deploymentId: deployment.stackId
