@@ -39,7 +39,7 @@ Resources:
       {{#ifExists backendConfiguration.databaseConfiguration}}
       Policies:
         - DynamoDBCrudPolicy:
-            TableName: !Ref {{backendConfiguration.databaseConfiguration.tableName}}Table
+            TableName: !Ref ApiDatabaseTable
       {{/ifExists}}
       Layers:
         {{#ifEquals backendConfiguration.architecture "arm64"}}
@@ -63,7 +63,7 @@ Resources:
 
   {{#ifExists backendConfiguration.databaseConfiguration}}
   # DynamoDB Table
-  {{backendConfiguration.databaseConfiguration.tableName}}Table:
+  ApiDatabaseTable:
     Type: AWS::DynamoDB::Table
     Properties:
       TableName: {{backendConfiguration.databaseConfiguration.tableName}}
@@ -101,5 +101,5 @@ Outputs:
   {{#ifExists backendConfiguration.databaseConfiguration}}
   TableName:
     Description: Name of the DynamoDB table
-    Value: !Ref {{backendConfiguration.databaseConfiguration.tableName}}Table
+    Value: !Ref ApiDatabaseTable
   {{/ifExists}}

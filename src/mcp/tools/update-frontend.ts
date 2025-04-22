@@ -315,7 +315,7 @@ export async function handleUpdateFrontend(params: z.infer<typeof updateFrontend
  * Update Frontend Tool definition
  */
 export const updateFrontendTool: McpTool = {
-  name: 'update-frontend',
+  name: 'update_frontend',
   description: 'Update frontend assets without redeploying the entire infrastructure',
   parameters: updateFrontendSchema.shape,
   handler: handleUpdateFrontend
