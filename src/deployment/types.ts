@@ -41,6 +41,7 @@ export interface BackendDeployOptions {
   timeout?: number;
   stage?: string;
   cors?: boolean;
+  port: number;
   environment?: Record<string, string>;
   databaseConfiguration?: {
     tableName: string;
