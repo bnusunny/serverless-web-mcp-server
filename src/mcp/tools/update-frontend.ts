@@ -2,6 +2,7 @@
  * Update Frontend Tool
  * 
  * Handles updating frontend assets without redeploying the entire infrastructure.
+ * Uses AWS SDK directly instead of AWS CLI.
  */
 
 import { z } from 'zod';
@@ -9,8 +10,11 @@ import { McpTool } from '../types/mcp-tool.js';
 import { logger } from '../../utils/logger.js';
 import path from 'path';
 import fs from 'fs';
-import { uploadFrontendAssets } from '../../deployment/frontend-upload.js';
-import { use_aws } from '../../utils/aws-utils.js';
+import mime from 'mime-types';
+import { CloudFormationClient, DescribeStacksCommand } from '@aws-sdk/client-cloudformation';
+import { S3Client, PutObjectCommand, ListObjectsV2Command, DeleteObjectCommand } from '@aws-sdk/client-s3';
+import { CloudFrontClient, CreateInvalidationCommand } from '@aws-sdk/client-cloudfront';
+import { fromNodeProviderChain } from '@aws-sdk/credential-providers';
 
 /**
  * Schema for update-frontend tool parameters
@@ -21,6 +25,109 @@ const updateFrontendSchema = z.object({
   region: z.string().default("us-east-1"),
   builtAssetsPath: z.string().min(1, "Path to built frontend assets is required")
 });
+
+/**
+ * Recursively get all files in a directory
+ */
+async function getAllFiles(dirPath: string, arrayOfFiles: string[] = [], basePath: string = dirPath): Promise<string[]> {
+  const files = fs.readdirSync(dirPath);
+
+  for (const file of files) {
+    const filePath = path.join(dirPath, file);
+    if (fs.statSync(filePath).isDirectory()) {
+      arrayOfFiles = await getAllFiles(filePath, arrayOfFiles, basePath);
+    } else {
+      arrayOfFiles.push(filePath);
+    }
+  }
+
+  return arrayOfFiles;
+}
+
+/**
+ * Upload a file to S3
+ */
+async function uploadFileToS3(
+  s3Client: S3Client, 
+  filePath: string, 
+  bucketName: string, 
+  basePath: string
+): Promise<void> {
+  // Get the relative path for the S3 key
+  const key = filePath.replace(basePath, '').replace(/^\//, '');
+  
+  // Read the file
+  const fileContent = fs.readFileSync(filePath);
+  
+  // Determine content type
+  const contentType = mime.lookup(filePath) || 'application/octet-stream';
+  
+  // Upload to S3
+  await s3Client.send(new PutObjectCommand({
+    Bucket: bucketName,
+    Key: key,
+    Body: fileContent,
+    ContentType: contentType
+  }));
+  
+  logger.debug(`Uploaded ${key} to ${bucketName}`);
+}
+
+/**
+ * Sync directory to S3 bucket (upload new/modified files, delete removed files)
+ */
+async function syncDirectoryToS3(
+  s3Client: S3Client,
+  directoryPath: string,
+  bucketName: string
+): Promise<void> {
+  logger.info(`Syncing directory ${directoryPath} to S3 bucket ${bucketName}`);
+  
+  // Get all local files
+  const localFiles = await getAllFiles(directoryPath);
+  const localFileKeys = localFiles.map(file => 
+    file.replace(directoryPath, '').replace(/^\//, '')
+  );
+  
+  // Get all S3 objects
+  const s3Objects: string[] = [];
+  let continuationToken: string | undefined;
+  
+  do {
+    const listCommand = new ListObjectsV2Command({
+      Bucket: bucketName,
+      ContinuationToken: continuationToken
+    });
+    
+    const response = await s3Client.send(listCommand);
+    
+    if (response.Contents) {
+      response.Contents.forEach(object => {
+        if (object.Key) s3Objects.push(object.Key);
+      });
+    }
+    
+    continuationToken = response.NextContinuationToken;
+  } while (continuationToken);
+  
+  // Upload new and modified files
+  for (const localFile of localFiles) {
+    await uploadFileToS3(s3Client, localFile, bucketName, directoryPath);
+  }
+  
+  // Delete files that exist in S3 but not locally
+  for (const s3Key of s3Objects) {
+    if (!localFileKeys.includes(s3Key)) {
+      logger.debug(`Deleting ${s3Key} from ${bucketName}`);
+      await s3Client.send(new DeleteObjectCommand({
+        Bucket: bucketName,
+        Key: s3Key
+      }));
+    }
+  }
+  
+  logger.info(`Sync completed: ${localFiles.length} files uploaded, ${s3Objects.length - localFileKeys.length} files deleted`);
+}
 
 /**
  * Handle update-frontend tool invocation
@@ -47,27 +154,50 @@ export async function handleUpdateFrontend(params: z.infer<typeof updateFrontend
       };
     }
     
+    // Initialize AWS clients
+    const credentials = fromNodeProviderChain();
+    const region = params.region;
+    
+    const cfClient = new CloudFormationClient({ 
+      region, 
+      credentials 
+    });
+    
+    const s3Client = new S3Client({ 
+      region, 
+      credentials 
+    });
+    
+    const cloudFrontClient = new CloudFrontClient({ 
+      region, 
+      credentials 
+    });
+    
     // Get the CloudFormation stack outputs to find the S3 bucket
     const stackName = `${params.projectName}-stack`;
     logger.info(`Looking up CloudFormation stack: ${stackName}`);
     
     try {
       // Get stack outputs
-      const describeStacksResult = await use_aws({
-        region: params.region,
-        service_name: 'cloudformation',
-        operation_name: 'describe-stacks',
-        label: 'Get CloudFormation stack outputs',
-        parameters: {
-          'stack-name': stackName
-        }
+      const describeStacksCommand = new DescribeStacksCommand({
+        StackName: stackName
       });
       
-      // Extract the S3 bucket name from stack outputs
-      const outputs = describeStacksResult.Stacks[0].Outputs;
-      const bucketOutput = outputs.find((output: any) => output.OutputKey === 'WebsiteBucket');
+      const describeStacksResult = await cfClient.send(describeStacksCommand);
       
-      if (!bucketOutput) {
+      if (!describeStacksResult.Stacks || describeStacksResult.Stacks.length === 0) {
+        return {
+          status: 'error',
+          message: `CloudFormation stack ${stackName} not found`,
+          content: [{ type: 'text', text: `Error: CloudFormation stack ${stackName} not found. Please deploy the application first using the deploy tool.` }]
+        };
+      }
+      
+      // Extract the S3 bucket name from stack outputs
+      const outputs = describeStacksResult.Stacks[0].Outputs || [];
+      const bucketOutput = outputs.find(output => output.OutputKey === 'WebsiteBucket');
+      
+      if (!bucketOutput || !bucketOutput.OutputValue) {
         return {
           status: 'error',
           message: `Could not find WebsiteBucket output in CloudFormation stack ${stackName}`,
@@ -81,41 +211,33 @@ export async function handleUpdateFrontend(params: z.infer<typeof updateFrontend
       // Upload the frontend assets to the S3 bucket
       logger.info(`Uploading frontend assets from ${builtAssetsPath} to bucket ${bucketName}`);
       
-      await use_aws({
-        region: params.region,
-        service_name: 's3',
-        operation_name: 'sync',
-        label: 'Upload frontend assets to S3',
-        parameters: {
-          'source': builtAssetsPath,
-          'destination': `s3://${bucketName}`,
-          'delete': ''
-        }
-      });
+      await syncDirectoryToS3(s3Client, builtAssetsPath, bucketName);
       
       // Check if there's a CloudFront distribution to invalidate
-      const cloudfrontOutput = outputs.find((output: any) => 
+      const cloudfrontOutput = outputs.find(output => 
         output.OutputKey === 'CloudFrontDistribution' || 
-        output.OutputKey === 'CloudFrontDomain');
+        output.OutputKey === 'CloudFrontDomain'
+      );
       
-      if (cloudfrontOutput) {
+      if (cloudfrontOutput && cloudfrontOutput.OutputValue) {
         const distributionId = cloudfrontOutput.OutputValue;
         logger.info(`Found CloudFront distribution: ${distributionId}`);
         
         // Create CloudFront invalidation to clear the cache
         logger.info(`Creating CloudFront invalidation for distribution ${distributionId}`);
         
-        await use_aws({
-          region: params.region,
-          service_name: 'cloudfront',
-          operation_name: 'create-invalidation',
-          label: 'Create CloudFront invalidation',
-          parameters: {
-            'distribution-id': distributionId,
-            'paths': '/*',
-            'caller-reference': new Date().getTime().toString()
+        const createInvalidationCommand = new CreateInvalidationCommand({
+          DistributionId: distributionId,
+          InvalidationBatch: {
+            CallerReference: new Date().getTime().toString(),
+            Paths: {
+              Quantity: 1,
+              Items: ['/*']
+            }
           }
         });
+        
+        await cloudFrontClient.send(createInvalidationCommand);
         
         logger.info(`CloudFront invalidation created successfully`);
       }
