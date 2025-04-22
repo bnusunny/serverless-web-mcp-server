@@ -216,11 +216,37 @@ export async function handleUpdateFrontend(params: z.infer<typeof updateFrontend
       // Check if there's a CloudFront distribution to invalidate
       const cloudfrontOutput = outputs.find(output => 
         output.OutputKey === 'CloudFrontDistribution' || 
-        output.OutputKey === 'CloudFrontDomain'
+        output.OutputKey === 'CloudFrontDomain' ||
+        output.OutputKey === 'CloudFrontDistributionId' ||
+        output.OutputKey === 'CloudFrontURL'
       );
       
       if (cloudfrontOutput && cloudfrontOutput.OutputValue) {
-        const distributionId = cloudfrontOutput.OutputValue;
+        // Get the distribution ID - it might be directly the ID or a URL
+        let distributionId = cloudfrontOutput.OutputValue;
+        
+        // If we have a CloudFront URL instead of an ID, look for the ID specifically
+        if (distributionId.startsWith('http')) {
+          const distributionIdOutput = outputs.find(output => 
+            output.OutputKey === 'CloudFrontDistributionId'
+          );
+          
+          if (distributionIdOutput && distributionIdOutput.OutputValue) {
+            distributionId = distributionIdOutput.OutputValue;
+          } else {
+            logger.warn(`Found CloudFront URL but no distribution ID, skipping invalidation`);
+            return {
+              status: 'success',
+              message: `Frontend assets updated successfully for ${params.projectName}, but couldn't create CloudFront invalidation`,
+              content: [
+                { type: 'text', text: `Frontend assets for ${params.projectName} have been successfully updated.` },
+                { type: 'text', text: `Assets were uploaded to S3 bucket: ${bucketName}` },
+                { type: 'text', text: `CloudFront distribution was found, but no distribution ID was available for cache invalidation. You may need to manually invalidate the cache.` }
+              ]
+            };
+          }
+        }
+        
         logger.info(`Found CloudFront distribution: ${distributionId}`);
         
         // Create CloudFront invalidation to clear the cache
