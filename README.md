@@ -11,35 +11,6 @@ The server supports deploying:
 - Frontend applications using S3 and CloudFront
 - Fullstack applications combining both backend and frontend components
 
-## New Feature: Automatic Dependency Installation
-
-The server now automatically handles dependencies for backend deployments:
-
-- **Node.js**: Copies package.json from project root if needed and runs `npm install --production`
-- **Python**: Copies requirements.txt and runs `pip install -r requirements.txt -t .`
-- **Ruby**: Copies Gemfile and runs `bundle install`
-
-This means you no longer need to include dependencies in your build artifacts - just provide your compiled code and the deployment process will handle the rest.
-
-## Path Resolution
-
-When specifying paths in deployment parameters:
-
-- `projectRoot` must be an absolute path (e.g., `/home/user/projects/myapp`)
-- `builtArtifactsPath` and `builtAssetsPath` can be:
-  - Absolute paths
-  - Relative paths that will be resolved against the `projectRoot`
-
-Example:
-```json
-{
-  "projectRoot": "/home/user/projects/myapp",
-  "backendConfiguration": {
-    "builtArtifactsPath": "backend/dist"  // Resolves to /home/user/projects/myapp/backend/dist
-  }
-}
-```
-
 ## MCP Implementation
 
 This server implements the Model Context Protocol with the following features:
@@ -59,21 +30,6 @@ Exposes deployment capabilities as tools:
 - `deployment_help`: Get help with deployment requirements and troubleshooting
 - `update_frontend`: Update frontend assets without redeploying the entire infrastructure
 
-### Transport Options
-
-The server supports two transport methods:
-- **stdio**: Default transport for local MCP server usage (integrates with Claude for Desktop)
-- **HTTP**: Web-based transport for remote clients
-
-## Security and User Control
-
-Following MCP security principles:
-
-- **User Consent**: All deployments require explicit user authorization
-- **Data Privacy**: Resource information is protected with appropriate access controls
-- **Tool Safety**: Clear documentation of tool behavior and required permissions
-- **AWS IAM Integration**: Secure authentication for all AWS operations
-
 ## Architecture
 
 The server consists of these core components:
@@ -81,7 +37,6 @@ The server consists of these core components:
 1. **MCP Protocol Handler**: Implements the JSON-RPC interface and message handling
 2. **Unified Deployment Service**: Manages deployments across different types (backend, frontend, fullstack)
 3. **AWS Integration Layer**: Interfaces with AWS SAM CLI and AWS services
-4. **Context Management**: Maintains state about projects and deployments
 
 ## Deployment Types
 
@@ -118,26 +73,6 @@ npm install
 
 # Build the project
 npm run build
-
-# Start the server (HTTP mode)
-MCP_TRANSPORT=http npm start
-```
-
-### Configuration
-
-Create a `config.json` file:
-
-```json
-{
-  "port": 3000,
-  "aws": {
-    "region": "us-east-1",
-    "profile": "default"
-  },
-  "templates": {
-    "path": "./templates"
-  }
-}
 ```
 
 ## Usage
@@ -159,15 +94,6 @@ For Claude for Desktop, edit `~/Library/Application Support/Claude/claude_deskto
 ```
 
 After configuring, restart Claude for Desktop. You should see the serverless-web tools available in the Claude interface.
-
-### Using as an HTTP Server
-
-MCP clients can connect to the server at:
-
-```
-http://localhost:3000/sse    # For SSE transport
-http://localhost:3000/messages    # For message handling
-```
 
 ### Command Line Options
 
@@ -302,9 +228,7 @@ This will return a list of all available tools with their descriptions and param
   "region": "us-east-1",
   "frontendConfiguration": {
     "builtAssetsPath": "frontend/build",
-    "indexDocument": "index.html",
-    "customDomain": "example.com",
-    "certificateArn": "arn:aws:acm:us-east-1:123456789012:certificate/abcdef12-3456-7890-abcd-ef1234567890"
+    "indexDocument": "index.html"
   }
 }
 ```
@@ -354,43 +278,6 @@ This will return a list of all available tools with their descriptions and param
 ├── DESIGN.md             # Detailed design document
 └── README.md             # This file
 ```
-
-### Running Tests
-
-```bash
-npm test
-```
-
-## Troubleshooting
-
-### Template Not Found
-
-If you encounter a "Template not found" error when using the MCP server installed from npm, you can specify the templates directory path using one of these methods:
-
-1. Use the `--templates` command line option:
-   ```bash
-   serverless-web-mcp --templates /path/to/templates
-   ```
-
-2. Set the `TEMPLATES_PATH` environment variable:
-   ```bash
-   TEMPLATES_PATH=/path/to/templates serverless-web-mcp
-   ```
-
-3. Enable debug logging to see which paths are being checked:
-   ```bash
-   serverless-web-mcp --debug
-   ```
-
-### Resource Not Found
-
-If you encounter a "Resource not found" error, the server will suggest alternative resources that might be what you're looking for. You can also use the `resource/list` method to discover all available resources:
-
-```bash
-curl -X POST http://localhost:3000/messages -H "Content-Type: application/json" -d '{"jsonrpc":"2.0","id":1,"method":"resource/list","params":{}}'
-```
-
-Or when using as a local MCP server with Claude or other LLM clients, simply request a list of resources.
 
 ## License
 
