@@ -293,6 +293,7 @@ const deployTool: McpTool = {
       timeout: z.number().optional().default(30).describe('Lambda timeout'),
       stage: z.string().optional().default('prod').describe('API Gateway stage'),
       cors: z.boolean().optional().default(true).describe('Enable CORS'),
+      port: z.number().describe('Port on which the web application runs'),
       environment: z.record(z.string()).optional().describe('Environment variables'),
       databaseConfiguration: z.object({
         tableName: z.string().describe('DynamoDB table name'),

@@ -28,7 +28,7 @@ Resources:
         - {{backendConfiguration.architecture}}
       Environment:
         Variables:
-          PORT: 8080
+          PORT: {{backendConfiguration.port}}
           AWS_LAMBDA_EXEC_WRAPPER: /opt/bootstrap
           {{#eachInObject backendConfiguration.environment}}
           {{key}}: {{value}}

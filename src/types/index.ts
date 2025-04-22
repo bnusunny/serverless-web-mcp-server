@@ -97,6 +97,11 @@ export interface DeployToolParams {
     cors?: boolean;
     
     /**
+     * Port on which the web application runs
+     */
+    port: number;
+    
+    /**
      * Environment variables for Lambda function
      */
     environment?: Record<string, string>;
