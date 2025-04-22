@@ -97,11 +97,37 @@ export async function deployApplication(options: DeployOptions): Promise<DeployR
           throw new Error(`Startup script must be relative to builtArtifactsPath, not an absolute path. Please provide a path relative to ${options.backendConfiguration.builtArtifactsPath}.`);
         }
         
-        // Determine the full path to the startup script
-        const scriptPath = path.join(options.backendConfiguration.builtArtifactsPath, 
-          options.backendConfiguration.startupScript);
+        // First check if the startup script exists directly at the specified path
+        // This handles cases where the user provides a path relative to project root
+        const directPath = path.join(projectRoot, options.backendConfiguration.startupScript);
+        let scriptPath;
+        let scriptExists = false;
         
-        if (!fs.existsSync(scriptPath)) {
+        if (fs.existsSync(directPath)) {
+          scriptPath = directPath;
+          scriptExists = true;
+          logger.info(`Found startup script at path relative to project root: ${scriptPath}`);
+          
+          // Update the startup script to be relative to builtArtifactsPath
+          // This is necessary because the deployment expects paths relative to builtArtifactsPath
+          const relativePath = path.relative(options.backendConfiguration.builtArtifactsPath, scriptPath);
+          if (relativePath.startsWith('..')) {
+            throw new Error(`Startup script ${options.backendConfiguration.startupScript} is outside of builtArtifactsPath ${options.backendConfiguration.builtArtifactsPath}. The script must be within the builtArtifactsPath directory.`);
+          }
+          options.backendConfiguration.startupScript = relativePath;
+          logger.info(`Updated startup script path to be relative to builtArtifactsPath: ${options.backendConfiguration.startupScript}`);
+        } else {
+          // If not found directly, try relative to builtArtifactsPath
+          scriptPath = path.join(options.backendConfiguration.builtArtifactsPath, 
+            options.backendConfiguration.startupScript);
+          
+          if (fs.existsSync(scriptPath)) {
+            scriptExists = true;
+            logger.info(`Found startup script at path relative to builtArtifactsPath: ${scriptPath}`);
+          }
+        }
+        
+        if (!scriptExists) {
           throw new Error(`Startup script not found at ${scriptPath}. The startup script should be located within the builtArtifactsPath directory and specified as a relative path.`);
         }
         
