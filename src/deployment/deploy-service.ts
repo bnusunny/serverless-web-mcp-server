@@ -44,7 +44,7 @@ if (!fs.existsSync(DEPLOYMENT_STATUS_DIR)) {
  * @returns - Deployment result
  */
 export async function deployApplication(options: DeployOptions): Promise<DeployResult> {
-  const { deploymentType, projectName } = options;
+  const { deploymentType, projectName, projectRoot } = options;
   
   logger.info(`[DEPLOY START] Starting deployment process for ${projectName}`);
   
@@ -170,13 +170,6 @@ export async function deployApplication(options: DeployOptions): Promise<DeployR
       status: DeploymentStatus.DEPLOYED,
       success: true,
       outputs: deployResult.outputs,
-      url: deployResult.outputs.ApiUrl || deployResult.outputs.WebsiteUrl || null,
-      resources: {
-        api: deployResult.outputs.ApiUrl || null,
-        website: deployResult.outputs.WebsiteUrl || null,
-        distribution: deployResult.outputs.CloudFrontDistribution || null,
-        bucket: deployResult.outputs.WebsiteBucket || null
-      },
       stackName: deployResult.stackName,
       updatedAt: new Date().toISOString()
     });

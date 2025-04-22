@@ -151,9 +151,7 @@ export async function getDeploymentStatus(projectName: string): Promise<any> {
         lastUpdated: stackInfo.lastUpdatedTime || metadata.lastUpdated,
         deploymentType: metadata.deploymentType,
         framework: metadata.framework,
-        endpoint,
         outputs: stackInfo.outputs,
-        resources: stackInfo.resources,
         region
       };
     } catch (error) {
