@@ -22,7 +22,6 @@ import { renderTemplate } from '../template/renderer.js';
 import * as os from 'os';
 import { logger } from '../utils/logger.js';
 import { generateStartupScript, StartupScriptOptions } from './startup-script-generator.js';
-import { installDependencies } from './dependency-installer.js';
 import { uploadFrontendAssets } from './frontend-upload.js';
 import { initializeDeploymentStatus, storeDeploymentMetadata, storeDeploymentError } from './status.js';
 
@@ -162,27 +161,7 @@ export async function deployApplication(options: DeployOptions): Promise<DeployR
         throw new Error(`No startup script provided or generated. Please either provide a startupScript or set generateStartupScript=true with an entryPoint.`);
       }
     }
-    
-    // Install dependencies for backend deployments
-    // if ((deploymentType === 'backend' || deploymentType === 'fullstack') && 
-    //     options.backendConfiguration) {
-      
-    //   logger.info(`Installing dependencies for ${projectName}...`);
-      
-    //   try {
-    //     await installDependencies(
-    //       projectRoot,
-    //       options.backendConfiguration.builtArtifactsPath,
-    //       options.backendConfiguration.runtime
-    //     );
-        
-    //     logger.info(`Dependencies installed successfully for ${projectName}`);
-    //   } catch (error: any) {
-    //     logger.warn(`Failed to install dependencies: ${error.message}`);
-    //     // Continue with deployment even if dependency installation fails
-    //     // This allows users to bundle dependencies themselves if needed
-    //   }
-    // }
+
     
     // Create deployment configuration
     const configuration: DeploymentConfiguration = {
