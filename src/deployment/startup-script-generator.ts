@@ -107,18 +107,12 @@ function generateScriptContent(runtime: string, entryPoint: string, additionalEn
   
   if (runtime.startsWith('nodejs')) {
     return `#!/bin/bash
-${envSetup}# Set up Lambda Web Adapter
-export PORT=8080
-
-# Start the application
+${envSetup}# Start the application
 exec node ${entryPoint}
 `;
   } else if (runtime.startsWith('python')) {
     return `#!/bin/bash
-${envSetup}# Set up Lambda Web Adapter
-export PORT=8080
-
-# Start the application
+${envSetup}# Start the application
 exec python ${entryPoint}
 `;
   } else if (runtime.startsWith('java')) {
@@ -127,52 +121,34 @@ exec python ${entryPoint}
     
     if (isJar) {
       return `#!/bin/bash
-${envSetup}# Set up Lambda Web Adapter
-export PORT=8080
-
-# Start the application
+${envSetup}# Start the application
 exec java -jar ${entryPoint}
 `;
     } else {
       return `#!/bin/bash
-${envSetup}# Set up Lambda Web Adapter
-export PORT=8080
-
-# Start the application
+${envSetup}# Start the application
 exec java ${entryPoint}
 `;
     }
   } else if (runtime.startsWith('dotnet')) {
     return `#!/bin/bash
-${envSetup}# Set up Lambda Web Adapter
-export PORT=8080
-
-# Start the application
+${envSetup}# Start the application
 exec dotnet ${entryPoint}
 `;
   } else if (runtime.startsWith('go')) {
     return `#!/bin/bash
-${envSetup}# Set up Lambda Web Adapter
-export PORT=8080
-
-# Start the application
+${envSetup}# Start the application
 exec ./${entryPoint}
 `;
   } else if (runtime.startsWith('ruby')) {
     return `#!/bin/bash
-${envSetup}# Set up Lambda Web Adapter
-export PORT=8080
-
-# Start the application
+${envSetup}# Start the application
 exec ruby ${entryPoint}
 `;
   } else {
     // Generic script for unknown runtimes
     return `#!/bin/bash
-${envSetup}# Set up Lambda Web Adapter
-export PORT=8080
-
-# Start the application
+${envSetup}# Start the application
 exec ${entryPoint}
 `;
   }
