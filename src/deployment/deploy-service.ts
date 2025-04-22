@@ -88,52 +88,49 @@ export async function deployApplication(options: DeployOptions): Promise<DeployR
     if ((deploymentType === 'backend' || deploymentType === 'fullstack') && 
         options.backendConfiguration) {
       
-      // If a startup script was provided, verify it exists and is relative to builtArtifactsPath
+      // If a startup script was provided, verify it exists and is executable
       if (options.backendConfiguration.startupScript) {
         logger.info(`Verifying provided startup script: ${options.backendConfiguration.startupScript}`);
         
         // Check if the provided startup script is an absolute path
         if (path.isAbsolute(options.backendConfiguration.startupScript)) {
-          throw new Error(`Startup script must be relative to builtArtifactsPath, not an absolute path. Please provide a path relative to ${options.backendConfiguration.builtArtifactsPath}.`);
+          throw new Error(`Startup script must be relative to builtArtifactsPath, not an absolute path. Please provide a path relative to the builtArtifactsPath directory.`);
         }
         
-        // First check if the startup script exists directly at the specified path
-        // This handles cases where the user provides a path relative to project root
-        const directPath = path.join(projectRoot, options.backendConfiguration.startupScript);
-        let scriptPath;
-        let scriptExists = false;
+        // Resolve the full path to the builtArtifactsPath
+        const fullArtifactsPath = options.backendConfiguration.builtArtifactsPath;
         
-        if (fs.existsSync(directPath)) {
-          scriptPath = directPath;
-          scriptExists = true;
-          logger.info(`Found startup script at path relative to project root: ${scriptPath}`);
-          
-          // Update the startup script to be relative to builtArtifactsPath
-          // This is necessary because the deployment expects paths relative to builtArtifactsPath
-          const relativePath = path.relative(options.backendConfiguration.builtArtifactsPath, scriptPath);
-          if (relativePath.startsWith('..')) {
-            throw new Error(`Startup script ${options.backendConfiguration.startupScript} is outside of builtArtifactsPath ${options.backendConfiguration.builtArtifactsPath}. The script must be within the builtArtifactsPath directory.`);
-          }
-          options.backendConfiguration.startupScript = relativePath;
-          logger.info(`Updated startup script path to be relative to builtArtifactsPath: ${options.backendConfiguration.startupScript}`);
-        } else {
-          // If not found directly, try relative to builtArtifactsPath
-          scriptPath = path.join(options.backendConfiguration.builtArtifactsPath, 
-            options.backendConfiguration.startupScript);
-          
-          if (fs.existsSync(scriptPath)) {
-            scriptExists = true;
-            logger.info(`Found startup script at path relative to builtArtifactsPath: ${scriptPath}`);
-          }
-        }
+        // Construct the full path to the startup script
+        const scriptPath = path.join(fullArtifactsPath, options.backendConfiguration.startupScript);
         
-        if (!scriptExists) {
-          throw new Error(`Startup script not found at ${scriptPath}. The startup script should be located within the builtArtifactsPath directory and specified as a relative path.`);
+        // Check if the script exists
+        if (!fs.existsSync(scriptPath)) {
+          throw new Error(
+            `Startup script not found at ${scriptPath}. ` +
+            `The startup script should be specified as a path relative to builtArtifactsPath. ` +
+            `For example, if your script is at "${fullArtifactsPath}/bootstrap", ` +
+            `you should set startupScript to "bootstrap".`
+          );
         }
         
         // Check if the script is executable
         try {
           const stats = fs.statSync(scriptPath);
+          const isExecutable = !!(stats.mode & 0o111); // Check if any execute bit is set
+          
+          if (!isExecutable) {
+            logger.warn(`Startup script ${scriptPath} is not executable. Making it executable...`);
+            fs.chmodSync(scriptPath, 0o755);
+          }
+        } catch (error) {
+          throw new Error(`Failed to check permissions on startup script: ${error instanceof Error ? error.message : String(error)}`);
+        }
+        
+        logger.info(`Verified startup script exists and is executable: ${scriptPath}`);
+      }
+      // Generate a startup script if requested
+      else if (options.backendConfiguration.generateStartupScript && 
+               options.backendConfiguration.entryPoint) {
           const isExecutable = !!(stats.mode & 0o111); // Check if any execute bit is set
           
           if (!isExecutable) {
