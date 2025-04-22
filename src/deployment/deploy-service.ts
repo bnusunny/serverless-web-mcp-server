@@ -97,12 +97,12 @@ export async function deployApplication(options: DeployOptions): Promise<DeployR
           throw new Error(`Startup script must be relative to builtArtifactsPath, not an absolute path. Please provide a path relative to ${options.backendConfiguration.builtArtifactsPath}.`);
         }
         
-        // Check if the startup script exists in the builtArtifactsPath
+        // Determine the full path to the startup script
         const scriptPath = path.join(options.backendConfiguration.builtArtifactsPath, 
-          path.basename(options.backendConfiguration.startupScript));
+          options.backendConfiguration.startupScript);
         
         if (!fs.existsSync(scriptPath)) {
-          throw new Error(`Startup script not found at ${scriptPath}. The startup script should be located in the builtArtifactsPath directory and specified as a relative path.`);
+          throw new Error(`Startup script not found at ${scriptPath}. The startup script should be located within the builtArtifactsPath directory and specified as a relative path.`);
         }
         
         // Check if the script is executable
@@ -118,8 +118,7 @@ export async function deployApplication(options: DeployOptions): Promise<DeployR
           throw new Error(`Failed to check permissions on startup script: ${error instanceof Error ? error.message : String(error)}`);
         }
         
-        // Update the startup script to be just the filename
-        options.backendConfiguration.startupScript = path.basename(options.backendConfiguration.startupScript);
+        // Keep the original relative path for the startup script
         logger.info(`Using provided startup script: ${options.backendConfiguration.startupScript}`);
       }
       // Generate a startup script if requested
