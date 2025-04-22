@@ -174,7 +174,7 @@ export async function handleUpdateFrontend(params: z.infer<typeof updateFrontend
     });
     
     // Get the CloudFormation stack outputs to find the S3 bucket
-    const stackName = `${params.projectName}-stack`;
+    const stackName = params.projectName;
     logger.info(`Looking up CloudFormation stack: ${stackName}`);
     
     try {
